@@ -1,0 +1,10 @@
+[custom.all.fua]
+type = "local"
+path = "."
+ipkg = "fua.ipkg"
+test = "test/test.ipkg"
+
+[custom.all.fua-test]
+type = "local"
+path = "test"
+ipkg = "test.ipkg"
