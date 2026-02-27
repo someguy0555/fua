@@ -16,7 +16,7 @@ modifyLast f (x :: (y :: xs)) = modifyLast f (y::xs)
 data TokenType =
   -- Single character tokens
   LEFT_PAREN | RIGHT_PAREN | LEFT_BRACE | RIGHT_BRACE |
-  COMMA | DOT | PLUS | MINUS | SEMICOLON | SLASH | STAR |
+  COMMA | DOT | SEMICOLON | PLUS | MINUS | SLASH | STAR | PERCENT |
 
   -- One or two character tokens
   BANG | BANG_EQUAL |
@@ -75,10 +75,6 @@ Parser parserState parserError = StateT parserState (Either parserError)
 Scanner : Type -> Type
 Scanner = Parser ScannerState ScannerError
 
-appendStringToTokenString : TokenType -> String -> TokenType
-appendStringToTokenString (STRING str) app = STRING $ str ++ app
-appendStringToTokenString _ app = STRING app 
-
 peekChar : Scanner $ Maybe Char
 peekChar = do
   state <- get
@@ -120,10 +116,40 @@ advance =
           } state
           pure $ Just ch
 
+-- NOTE: There is a bug here (probably here)
+back : Scanner $ Maybe Char
+back =
+  do
+    state <- get
+    case unpack state.currLine.scanned of
+      [] =>
+        do
+          case state.lines.scanned of
+            [] => pure Nothing
+            linesScanned@(_::_) =>
+              do
+                let lastScanned = last linesScanned
+                let initScanned = init linesScanned
+                put $ {
+                  line     := state.line `minus` 1,
+                  column   := length lastScanned `minus` 1,
+                  lines    := MkCursor initScanned $ (state.currLine.scanned ++ state.currLine.left) :: state.lines.left,
+                  currLine := MkCursor "" lastScanned
+                } state
+                back
+      lineScanned@(_::_) =>
+        do
+          let lastScanned = last lineScanned
+          let initScanned = pack $ init lineScanned
+          put $ {
+            column   := state.column `minus` 1,
+            currLine := MkCursor initScanned (show lastScanned ++ state.currLine.left)
+          } state
+          pure $ Just lastScanned
+
 match : Char -> Scanner Bool
 match ch =
   do
-    state <- get
     maybe <- peekChar 
     pure $ case maybe of
       Nothing => False
@@ -137,114 +163,163 @@ isAtLineEnd =
       [] => False
       _  => True
 
-||| Takes a bunch of lines of code, and scans them into tokens.
+addToken : TokenType -> Scanner ()
+addToken tt =
+  do
+    state <- get
+    put $ {
+      tokens := state.tokens ++ [MkToken state.line state.column tt]
+    } state
+
+appendStringToTokenString : TokenType -> String -> TokenType
+appendStringToTokenString (STRING str) app = STRING $ str ++ app
+appendStringToTokenString _ app = STRING app 
+
+readStringLiteral : Scanner ()
+readStringLiteral =
+  do
+    state <- get
+    c <- advance
+    case traceVal c of
+      Nothing => pure ()
+      -- Nothing => lift . Left $ MkScannerError state.line state.column "Unable to find string literal"
+      Just '"' => do
+        put $ { tokens := state.tokens ++ [ MkToken state.line state.column (STRING "") ] } state
+        readStringLiteral'
+      Just _ => pure ()
+  where
+    readStringLiteral' : Scanner ()
+    readStringLiteral' =
+      do
+        state <- get
+        c <- advance
+        case traceVal c of
+          Nothing => lift . Left $ MkScannerError state.line state.column "Unterminated string"
+          Just c  =>
+            do
+              case c of
+                '\\' => do
+                  matches <- match '\\'
+                  case matches of
+                    True =>
+                      do
+                        _ <- advance
+                        put $ { tokens := modifyLast (\tk => { token := appendStringToTokenString tk.token "\\" } tk) state.tokens } state
+                        readStringLiteral'
+                    False => do
+                      matches <- match '"'
+                      case matches of
+                        True =>
+                          do
+                            _ <- advance
+                            -- put $ { tokens := (\tk => appendStringToTokenString tk "\"" ) state.tokens } state
+                            put $ { tokens := modifyLast (\tk => { token := appendStringToTokenString tk.token "\"" } tk) state.tokens } state
+                            readStringLiteral'
+                        False => readStringLiteral'
+                '"' => pure ()
+                c =>
+                  do
+                    -- put $ { tokens := (\tk => appendStringToTokenString tk (show c) ) state.tokens } state
+                    put $ { tokens := modifyLast (\tk => { token := appendStringToTokenString tk.token (show c) } tk) state.tokens } state
+                    readStringLiteral'
+
+
 scan' : Scanner $ List Token
 scan' =
   do
     state <- get
-    case unpack $ state.currLine.left of
-      [] =>
-        do
-          case state.lines.left of
-            [] => pure state.tokens
-            nextLine::newLeft =>
-              do
-                let lines = state.lines
-                let currLine = state.currLine
-                put $ {
-                  line     := state.line + 1,
-                  column   := 0,
-                  lines    := MkCursor (lines.scanned ++ [currLine.scanned ++ currLine.left]) newLeft,
-                  currLine := MkCursor "" nextLine
-                } state
+    c <- advance
+    case c of
+      Nothing => pure state.tokens
+      Just c => case c of
+        '!' =>
+          do
+            r <- match '='
+            case r of
+              False => do
+                addToken BANG
                 scan'
-      old@('!'::'='::new) => addToken old new BANG_EQUAL
-      old@('='::'='::new) => addToken old new EQUAL_EQUAL
-      old@('<'::'='::new) => addToken old new LESS_EQUAL
-      old@('>'::'='::new) => addToken old new GREATER_EQUAL
-      old@('('::new)      => addToken old new LEFT_PAREN
-      old@(')'::new)      => addToken old new RIGHT_PAREN
-      old@('{'::new)      => addToken old new LEFT_BRACE
-      old@('}'::new)      => addToken old new RIGHT_BRACE
-      old@(','::new)      => addToken old new COMMA
-      old@('.'::new)      => addToken old new DOT
-      old@('-'::new)      => addToken old new MINUS
-      old@('+'::new)      => addToken old new PLUS
-      old@(';'::new)      => addToken old new SEMICOLON
-      old@('*'::new)      => addToken old new LEFT_PAREN
-      old@(' '::new)      => skip old new
-      old@('\r'::new)     => skip old new
-      old@('\t'::new)     => skip old new
-      old@('"'::new)      => addStringLiteral new
-      _ => lift . Left $ MkScannerError state.line state.column "Unexpected symbol"
-  where
-    ||| Takes the old left String, the new left String, the TokenType, 
-    ||| and moves the "cursor" to the right by the size of the taken character(s).
-    addToken : List Char -> List Char -> TokenType -> Scanner $ List Token
-    addToken old new tt =
-      do
-        state <- get
-        let currLine = state.currLine
-        let skipNum = length old `minus` length new
-        let taken = pack . take skipNum $ old 
-        put $ {
-          column   := state.column + skipNum,
-          currLine := MkCursor (currLine.scanned ++ taken) (pack new),
-          tokens   := state.tokens ++ [MkToken state.line state.column tt] -- NOTE: I'm not sure this works like I'd expect it to...
-        } state
-        scan'
-    ||| Skip this character
-    skip : List Char -> List Char -> Scanner $ List Token
-    skip old new =
-      do
-        state <- get
-        let currLine = state.currLine
-        let skipNum = length old `minus` length new
-        let taken = pack . take skipNum $ old 
-        put $ {
-          column   := state.column + skipNum,
-          currLine := MkCursor (currLine.scanned ++ taken) (pack new)
-        } state
-        scan'
-
-    ||| Is at end of current line
-    scanTillLiteralEnd : Scanner $ List Token
-    scanTillLiteralEnd =
-      do
-        state <- get
-        case unpack $ traceVal state.currLine.left of
-             [] => lift . Left $ MkScannerError state.line state.column "Unterminated string"
-             '\\'::'\\'::'"'::xs => pushToken 2 "\\\\" "\\" (pack xs)
-             '\\'::'"'::xs       => pushToken 2 "\\\"" "\"" (pack xs)
-             '"'::xs             =>
-              do
-               tokens <- pushToken 1 "\"" "" (pack xs)
-               trace (show tokens) scan'
-             x::xs               => pushToken 1 (show x) (show x) (pack xs)
-      where
-          pushToken : Nat -> String -> String -> String -> Scanner $ List Token
-          pushToken pushChars skipStr tokenStr newLeft =
-            do
-               state <- get
-               put $ {
-                 column   := state.column + pushChars,
-                 currLine := MkCursor (state.currLine.scanned ++ skipStr) newLeft,
-                 tokens   := modifyLast (\tk => { token := appendStringToTokenString tk.token tokenStr } tk) state.tokens
-               } state
-               scanTillLiteralEnd
-
-    ||| Scan and add string literal
-    addStringLiteral : List Char -> Scanner $ List Token
-    addStringLiteral new =
-      do
-        state <- get
-        put $ {
-          column   := state.column + 1,
-          currLine := MkCursor (state.currLine.scanned ++ "\"") (pack new),
-          tokens   := state.tokens ++ [MkToken state.line state.column (STRING "")] -- NOTE: I'm not sure this works like I'd expect it to...
-        } state
-        _ <- scanTillLiteralEnd
-        scan'
+              True => do
+                _ <- advance
+                addToken BANG_EQUAL
+                scan'
+        '=' =>
+          do
+            r <- match '='
+            case r of
+              False => do
+                addToken EQUAL
+                scan'
+              True => do
+                _ <- advance
+                addToken EQUAL_EQUAL
+                scan'
+        '<' =>
+          do
+            r <- match '='
+            case r of
+              False => do
+                addToken LESS
+                scan'
+              True => do
+                _ <- advance
+                addToken LESS_EQUAL
+                scan'
+        '>' =>
+          do
+            r <- match '='
+            case r of
+              False => do
+                addToken GREATER
+                scan'
+              True => do
+                _ <- advance
+                addToken GREATER_EQUAL
+                scan'
+        '(' => do
+          addToken LEFT_PAREN
+          scan'
+        ')' => do
+          addToken RIGHT_PAREN
+          scan'
+        '{' => do
+          addToken LEFT_BRACE
+          scan'
+        '}' => do
+          addToken RIGHT_BRACE
+          scan'
+        ',' => do
+          addToken COMMA
+          scan'
+        '.' => do
+          addToken DOT
+          scan'
+        ';' => do
+          addToken SEMICOLON
+          scan'
+        '+' => do
+          addToken PLUS
+          scan'
+        '-' => do
+          addToken MINUS
+          scan'
+        '*' => do
+          addToken STAR
+          scan'
+        '/' => do
+          addToken SLASH
+          scan'
+        '%' => do
+          addToken PERCENT
+          scan'
+        ' '  => scan'
+        '\r' => scan'
+        '\t' => scan'
+        '"' => do
+          b <- back
+          _ <- readStringLiteral
+          trace ("Huh: " ++ show b) scan'
+        _ => lift . Left $ MkScannerError state.line state.column "Unexpected symbol"
 
 scan : String -> Either ScannerError (ScannerState, List Token)
 scan code = runStateT (MkScannerState 0 0 allLines (MkCursor "" currLine) []) scan'
