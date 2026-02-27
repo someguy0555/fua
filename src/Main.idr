@@ -79,13 +79,63 @@ appendStringToTokenString : TokenType -> String -> TokenType
 appendStringToTokenString (STRING str) app = STRING $ str ++ app
 appendStringToTokenString _ app = STRING app 
 
--- peekChar : Scanner $ Maybe Char
--- peekChar = do
---   state <- get
---
--- advance : Scanner $ Char
--- match : Char -> Scanner Bool
--- isAtLineEnd : Scanner Bool
+peekChar : Scanner $ Maybe Char
+peekChar = do
+  state <- get
+  pure $ case unpack state.currLine.left of
+    [] =>
+      do
+        case state.lines.left of
+          [] => Nothing
+          left => do
+            let trueLeft = unpack $ concat left
+            case trueLeft of
+              [] => Nothing
+              x::_ => Just x
+    ch::_ => Just ch
+
+advance : Scanner $ Maybe Char
+advance =
+  do
+    state <- get
+    case unpack state.currLine.left of
+      [] =>
+        do
+          case state.lines.left of
+            [] => pure Nothing
+            ln::linesLeft =>
+              do
+                put $ {
+                  line     := state.line + 1,
+                  column   := 0,
+                  lines    := MkCursor (state.lines.scanned ++ [state.currLine.scanned]) linesLeft,
+                  currLine := MkCursor ln ""
+                } state
+                advance
+      ch::newLeft =>
+        do
+          put $ {
+            column   := state.column + 1,
+            currLine := MkCursor (state.currLine.scanned ++ show ch) (pack newLeft)
+          } state
+          pure $ Just ch
+
+match : Char -> Scanner Bool
+match ch =
+  do
+    state <- get
+    maybe <- peekChar 
+    pure $ case maybe of
+      Nothing => False
+      Just peeked => if ch == peeked then True else False
+
+isAtLineEnd : Scanner Bool
+isAtLineEnd =
+  do
+    state <- get
+    pure $ case unpack state.currLine.left of
+      [] => False
+      _  => True
 
 ||| Takes a bunch of lines of code, and scans them into tokens.
 scan' : Scanner $ List Token
