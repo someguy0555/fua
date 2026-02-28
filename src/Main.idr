@@ -1,17 +1,30 @@
 module Main
 
-import Data.List;
-import Data.String;
-import Control.Monad.State;
-import Data.Either;
+import Data.List
+import Data.String
+import Control.Monad.State
+import Data.Either
 
-import Debug.Trace;
+import Debug.Trace
 
 -- Utility functions
 modifyLast : (a -> a) -> List a -> List a
 modifyLast f [] = []
 modifyLast f (x :: []) = f x :: []
-modifyLast f (x :: (y :: xs)) = modifyLast f (y::xs)
+modifyLast f (x :: (y :: xs)) = x :: (modifyLast f (y::xs))
+
+digitToInt : Char -> Maybe Int
+digitToInt '0' = Just 0
+digitToInt '1' = Just 1
+digitToInt '2' = Just 2
+digitToInt '3' = Just 3
+digitToInt '4' = Just 4
+digitToInt '5' = Just 5
+digitToInt '6' = Just 6
+digitToInt '7' = Just 7
+digitToInt '8' = Just 8
+digitToInt '9' = Just 9
+digitToInt _   = Nothing
 
 data TokenType =
   -- Single character tokens
@@ -61,13 +74,21 @@ record ScannerState where
   tokens : List Token
 
 Show TokenType where
-  show t = "TOKENTYPE"
+  show (INTEGER i) = "{ " ++ "INTEGER: " ++ show i ++ " }"
+  show (STRING s) = "{ " ++ "STRING: " ++ show s ++ " }"
+  show _ = "{ TOKENTYPE }"
 
 Show Token where
   show tk = "{" ++ show tk.line ++ ", " ++ show tk.column ++ ", " ++ show tk.token ++ "}"
 
 Show ScannerError where
   show se = "{" ++ show se.line ++ ", " ++ show se.column ++ ", " ++ se.msg ++ "}"
+
+Show a => Show (Cursor a) where
+  show cur = show (cur.scanned, cur.left)
+
+Show ScannerState where
+  show se = "{" ++ show se.line ++ ", " ++ show se.column ++ ", " ++ show se.lines ++ ", " ++ show se.currLine ++ ", " ++ show se.tokens ++ "}"
 
 Parser : Type -> Type -> Type -> Type
 Parser parserState parserError = StateT parserState (Either parserError)
@@ -90,6 +111,7 @@ peekChar = do
               x::_ => Just x
     ch::_ => Just ch
 
+-- There appear to be no bugs here.
 advance : Scanner $ Maybe Char
 advance =
   do
@@ -105,18 +127,18 @@ advance =
                   line     := state.line + 1,
                   column   := 0,
                   lines    := MkCursor (state.lines.scanned ++ [state.currLine.scanned]) linesLeft,
-                  currLine := MkCursor ln ""
+                  currLine := MkCursor "" ln
                 } state
                 advance
       ch::newLeft =>
         do
           put $ {
             column   := state.column + 1,
-            currLine := MkCursor (state.currLine.scanned ++ show ch) (pack newLeft)
+            currLine := MkCursor (state.currLine.scanned ++ (pack [ch])) (pack newLeft)
           } state
           pure $ Just ch
 
--- NOTE: There is a bug here (probably here)
+-- There appear to be no bugs here.
 back : Scanner $ Maybe Char
 back =
   do
@@ -132,10 +154,12 @@ back =
                 let initScanned = init linesScanned
                 put $ {
                   line     := state.line `minus` 1,
+                  -- column   := length lastScanned,
                   column   := length lastScanned `minus` 1,
                   lines    := MkCursor initScanned $ (state.currLine.scanned ++ state.currLine.left) :: state.lines.left,
-                  currLine := MkCursor "" lastScanned
+                  currLine := MkCursor lastScanned ""
                 } state
+                st2 <- get
                 back
       lineScanned@(_::_) =>
         do
@@ -143,7 +167,7 @@ back =
           let initScanned = pack $ init lineScanned
           put $ {
             column   := state.column `minus` 1,
-            currLine := MkCursor initScanned (show lastScanned ++ state.currLine.left)
+            currLine := MkCursor initScanned ((pack [lastScanned]) ++ state.currLine.left)
           } state
           pure $ Just lastScanned
 
@@ -175,12 +199,16 @@ appendStringToTokenString : TokenType -> String -> TokenType
 appendStringToTokenString (STRING str) app = STRING $ str ++ app
 appendStringToTokenString _ app = STRING app 
 
+appendExistingInteger : TokenType -> Integer -> TokenType
+appendExistingInteger (INTEGER intg) i = INTEGER $ intg * 10 + i
+appendExistingInteger _ i = INTEGER i
+
 readStringLiteral : Scanner ()
 readStringLiteral =
   do
-    state <- get
     c <- advance
-    case traceVal c of
+    state <- get
+    case c of
       Nothing => pure ()
       -- Nothing => lift . Left $ MkScannerError state.line state.column "Unable to find string literal"
       Just '"' => do
@@ -191,9 +219,9 @@ readStringLiteral =
     readStringLiteral' : Scanner ()
     readStringLiteral' =
       do
+        mc <- advance
         state <- get
-        c <- advance
-        case traceVal c of
+        case mc of
           Nothing => lift . Left $ MkScannerError state.line state.column "Unterminated string"
           Just c  =>
             do
@@ -204,7 +232,10 @@ readStringLiteral =
                     True =>
                       do
                         _ <- advance
-                        put $ { tokens := modifyLast (\tk => { token := appendStringToTokenString tk.token "\\" } tk) state.tokens } state
+                        state <- get
+                        put $ {
+                          tokens := modifyLast (\tk => { token := appendStringToTokenString tk.token "\\" } tk) state.tokens
+                        } state
                         readStringLiteral'
                     False => do
                       matches <- match '"'
@@ -212,16 +243,51 @@ readStringLiteral =
                         True =>
                           do
                             _ <- advance
+                            state <- get
                             -- put $ { tokens := (\tk => appendStringToTokenString tk "\"" ) state.tokens } state
-                            put $ { tokens := modifyLast (\tk => { token := appendStringToTokenString tk.token "\"" } tk) state.tokens } state
+                            put $ {
+                              tokens := modifyLast (\tk => { token := appendStringToTokenString tk.token "\"" } tk) state.tokens
+                            } state
                             readStringLiteral'
                         False => readStringLiteral'
                 '"' => pure ()
                 c =>
                   do
                     -- put $ { tokens := (\tk => appendStringToTokenString tk (show c) ) state.tokens } state
-                    put $ { tokens := modifyLast (\tk => { token := appendStringToTokenString tk.token (show c) } tk) state.tokens } state
+                    put $ {
+                      tokens := modifyLast (\tk => { token := appendStringToTokenString tk.token (pack [c]) } tk) state.tokens
+                    } state
                     readStringLiteral'
+
+readIntegerLiteral : Scanner ()
+readIntegerLiteral =
+  do
+    mc <- advance
+    case mc of
+      Nothing => pure ()
+      Just c => case digitToInt c of
+        Nothing => pure ()
+        Just d => do
+          state <- get
+          put $ {
+            tokens := state.tokens ++ [ MkToken state.line state.column (INTEGER (the Integer $ cast d)) ]
+          } state
+          readIntegerLiteral'
+  where
+    readIntegerLiteral' : Scanner ()
+    readIntegerLiteral' = do
+      mc <- peekChar
+      case mc of
+        Nothing => pure ()
+        Just c => case digitToInt c of
+          Nothing => pure ()
+          Just d => do
+            _ <- advance
+            state <- get
+            put $ {
+              tokens := modifyLast (\tk => { token := appendExistingInteger tk.token (the Integer $ cast d) } tk) state.tokens
+            } state
+            readIntegerLiteral'
 
 
 scan' : Scanner $ List Token
@@ -316,10 +382,17 @@ scan' =
         '\r' => scan'
         '\t' => scan'
         '"' => do
-          b <- back
+          _ <- back
           _ <- readStringLiteral
-          trace ("Huh: " ++ show b) scan'
-        _ => lift . Left $ MkScannerError state.line state.column "Unexpected symbol"
+          scan'
+        ch => do
+          if isDigit ch
+             then do
+               _ <- back
+               _ <- readIntegerLiteral
+               scan'
+             else do
+               lift . Left $ MkScannerError state.line state.column "Unexpected symbol"
 
 scan : String -> Either ScannerError (ScannerState, List Token)
 scan code = runStateT (MkScannerState 0 0 allLines (MkCursor "" currLine) []) scan'
@@ -333,7 +406,7 @@ scan code = runStateT (MkScannerState 0 0 allLines (MkCursor "" currLine) []) sc
     allLines =
       case lines code of
         []    => MkCursor [] []
-        x::xs => MkCursor [x] xs
+        x::xs => MkCursor [] xs
 
 main : IO ()
 main = do
