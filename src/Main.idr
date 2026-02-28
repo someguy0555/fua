@@ -26,6 +26,17 @@ digitToInt '8' = Just 8
 digitToInt '9' = Just 9
 digitToInt _   = Nothing
 
+isIdentifier : Char -> Bool
+isIdentifier ch =
+  if isSpace ch
+    then False
+    else
+      if isAlpha ch
+         then True
+         else case ch of
+           '_' => True
+           _   => False
+
 data TokenType =
   -- Single character tokens
   LEFT_PAREN | RIGHT_PAREN | LEFT_BRACE | RIGHT_BRACE |
@@ -76,6 +87,7 @@ record ScannerState where
 Show TokenType where
   show (INTEGER i) = "{ " ++ "INTEGER: " ++ show i ++ " }"
   show (STRING s) = "{ " ++ "STRING: " ++ show s ++ " }"
+  show (IDENTIFIER s) = "{ " ++ "IDENTIFIER: " ++ show s ++ " }"
   show _ = "{ TOKENTYPE }"
 
 Show Token where
@@ -203,6 +215,10 @@ appendExistingInteger : TokenType -> Integer -> TokenType
 appendExistingInteger (INTEGER intg) i = INTEGER $ intg * 10 + i
 appendExistingInteger _ i = INTEGER i
 
+appendExistingIdentifier : TokenType -> String -> TokenType
+appendExistingIdentifier (IDENTIFIER str) app = IDENTIFIER $ str ++ app
+appendExistingIdentifier _ app = IDENTIFIER app 
+
 readStringLiteral : Scanner ()
 readStringLiteral =
   do
@@ -275,20 +291,53 @@ readIntegerLiteral =
           readIntegerLiteral'
   where
     readIntegerLiteral' : Scanner ()
-    readIntegerLiteral' = do
-      mc <- peekChar
-      case mc of
-        Nothing => pure ()
-        Just c => case digitToInt c of
+    readIntegerLiteral' =
+      do
+        mc <- peekChar
+        case mc of
           Nothing => pure ()
-          Just d => do
-            _ <- advance
+          Just c => case digitToInt c of
+            Nothing => pure ()
+            Just d => do
+              _ <- advance
+              state <- get
+              put $ {
+                tokens := modifyLast (\tk => { token := appendExistingInteger tk.token (the Integer $ cast d) } tk) state.tokens
+              } state
+              readIntegerLiteral'
+
+readIdentifier : Scanner ()
+readIdentifier =
+  do
+    mc <- advance
+    case mc of
+      Nothing => pure ()
+      Just c =>
+        if isIdentifier c
+          then do
             state <- get
             put $ {
-              tokens := modifyLast (\tk => { token := appendExistingInteger tk.token (the Integer $ cast d) } tk) state.tokens
+              tokens := state.tokens ++ [ MkToken state.line state.column (IDENTIFIER (pack [c])) ]
             } state
-            readIntegerLiteral'
-
+            readIdentifier'
+          else pure ()
+  where
+    readIdentifier' : Scanner ()
+    readIdentifier' =
+      do
+        mc <- peekChar
+        case mc of
+             Nothing => pure ()
+             Just c => if isIdentifier c
+               then
+                 do
+                   _ <- advance
+                   state <- get
+                   put $ {
+                     tokens := modifyLast (\tk => { token := appendExistingIdentifier tk.token (pack [c]) } tk) state.tokens
+                   } state
+                   readIdentifier'
+               else pure ()
 
 scan' : Scanner $ List Token
 scan' =
@@ -392,7 +441,12 @@ scan' =
                _ <- readIntegerLiteral
                scan'
              else do
-               lift . Left $ MkScannerError state.line state.column "Unexpected symbol"
+               if isIdentifier ch
+                  then do
+                    _ <- back
+                    _ <- readIdentifier
+                    scan'
+                  else lift . Left $ MkScannerError state.line state.column "Unexpected symbol"
 
 scan : String -> Either ScannerError (ScannerState, List Token)
 scan code = runStateT (MkScannerState 0 0 allLines (MkCursor "" currLine) []) scan'
@@ -413,5 +467,5 @@ main = do
   putStrLn "Start:"
   code <- getLine
   case scan code of
-       Left err => print err
-       Right (st,t) => print t
+    Left err => print err
+    Right (st,t) => print t
