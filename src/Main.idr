@@ -6,6 +6,7 @@ import Control.Monad.State
 import Data.Either
 
 import Debug.Trace
+import System.File
 
 -- Utility functions
 modifyLast : (a -> a) -> List a -> List a
@@ -339,6 +340,11 @@ readIdentifier =
                    readIdentifier'
                else pure ()
 
+-- readKeyword : String -> Scanner ()
+-- readKeyword str =
+--   do
+--     mc <- ad
+
 scan' : Scanner $ List Token
 scan' =
   do
@@ -463,9 +469,13 @@ scan code = runStateT (MkScannerState 0 0 allLines (MkCursor "" currLine) []) sc
         x::xs => MkCursor [] xs
 
 main : IO ()
-main = do
-  putStrLn "Start:"
-  code <- getLine
-  case scan code of
-    Left err => print err
-    Right (st,t) => print t
+main =
+  do
+    let path = "lexer-test.txt"
+    str <- readFile path
+    case str of
+      Left  e1 => print e1
+      Right t1 =>
+        case scan t1 of
+          Left  e2 => print e2
+          Right (st,t2) => print t2
