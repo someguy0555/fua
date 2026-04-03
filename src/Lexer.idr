@@ -11,6 +11,12 @@ import System.File
 
 import Parser
 
+record LexerState where
+  constructor MkLexerState
+  input  : String
+  line   : Nat
+  column : Nat
+
 -- This is a very temporary solution to the problem
 -- It should be replaced with something else,
 -- probably a foreign library.
@@ -50,35 +56,35 @@ record Token where
 isChar : Char -> Bool
 isChar = isAlpha
 
-parseChar : ( Char -> Bool ) -> Parser Char
+parseChar : ( Char -> Bool ) -> Parser LexerState Char
 parseChar predicate =
   do
-   MkParserState input line column <- lift get
+   MkLexerState input line column <- lift get
    case unpack input of
        [] => left "No character found"
        (h::t) =>
          if predicate h
            then do
-             let newLine = if h == '\n' then line + 1 else line -- This is a bit hacky imo..
-             lift . put $ MkParserState ( pack t ) newLine ( column + 1 )
+             let (newLine, newCol) = if h == '\n' then (line + 1, 0) else (line, column + 1) -- This is a bit hacky imo..
+             lift . put $ MkLexerState ( pack t ) newLine newCol
              pure h
            else left $ "Character '" ++ show h ++ "' does not match given predicate"
 
-parseSpecificChar : Char -> Parser Char
+parseSpecificChar : Char -> Parser LexerState Char
 parseSpecificChar chr = parseChar (chr==)
 
-parseKeyword : TokenType -> String -> Parser Token
+parseKeyword : TokenType -> String -> Parser LexerState Token
 parseKeyword tt prf =
   do
-    MkParserState input line column <- lift get
+    MkLexerState input line column <- lift get
     if prf `isPrefixOf` input
        then do
          let prefixLen = length prf
-         lift . put $ MkParserState ( pack . drop prefixLen . unpack $ input ) line ( column + prefixLen )
+         lift . put $ MkLexerState ( pack . drop prefixLen . unpack $ input ) line ( column + prefixLen )
          pure $ MkToken tt line column
        else left $ "Keyword '" ++ prf ++ "' not found"
 
-parseInteger : Parser Integer
+parseInteger : Parser LexerState Integer
 parseInteger =
   do
     state <- lift get
@@ -104,17 +110,17 @@ parseInteger =
     charsToInts = cast . foldl (\a, b => a * 10 + toDigit b) 0
 
 
-parseIntegerLiteral : Parser Token
+parseIntegerLiteral : Parser LexerState Token
 parseIntegerLiteral =
   do
-    state@(MkParserState _ line column) <- lift get
+    state@(MkLexerState _ line column) <- lift get
     case (parse parseInteger) state of
       (_, Left err) => left err
       (state', Right rh) => do
         lift . put $ state'
         pure $ MkToken (INTEGER rh) line column
 
-parseEscapedChar : ( Char -> Bool) -> Parser Char
+parseEscapedChar : ( Char -> Bool) -> Parser LexerState Char
 parseEscapedChar predicate =
   do
     state <- lift get
@@ -125,7 +131,7 @@ parseEscapedChar predicate =
         lift . put $ state'
         pure rh
 
-parseInsideStringLiteral : Parser String
+parseInsideStringLiteral : Parser LexerState String
 parseInsideStringLiteral =
   do
     state <- lift get
@@ -137,10 +143,10 @@ parseInsideStringLiteral =
         lift . put $ state'
         pure . pack $ rh
 
-parseStringLiteral : Parser Token
+parseStringLiteral : Parser LexerState Token
 parseStringLiteral =
   do
-    state@(MkParserState _ line column) <- lift get
+    state@(MkLexerState _ line column) <- lift get
     let firstQuoteParser = parserOverwriteError (\err => "No start to string literal found") $ parseChar ('"'==)
     let lastQuoteParser  = parserOverwriteError (\err => "No end to string literal found" ) $ parseChar ('"'==)
     let stringLiteralParser = parserOverwriteError (\err => "Inside string literal: " ++ err) $ parseInsideStringLiteral
@@ -151,10 +157,10 @@ parseStringLiteral =
         lift . put $ state'
         pure $ MkToken (STRING rh) line column
 
-parseIdentifier : Parser Token
+parseIdentifier : Parser LexerState Token
 parseIdentifier =
   do
-    state@(MkParserState _ line column) <- lift get
+    state@(MkLexerState _ line column) <- lift get
     let parser = (\hd, tl => pack $ hd::tl) <$> parseChar (isIdentifierHead) <*> (some $ parseChar (isIdentifierTail))
     case (parse parser) state of
       (_, Left err) => left $ "In identifier: " ++ err
@@ -168,10 +174,10 @@ parseIdentifier =
     isIdentifierTail : Char -> Bool
     isIdentifierTail chr = isAlpha chr || isDigit chr
 
-parseRealNumberLiteral : Parser Token
+parseRealNumberLiteral : Parser LexerState Token
 parseRealNumberLiteral =
   do
-    state@(MkParserState _ line column) <- lift get
+    state@(MkLexerState _ line column) <- lift get
     let parser = (\pre, _, post => MkRealNumber pre post) <$> parseInteger <*> parseChar ('.'==) <*> parseInteger
     case (parse parser) state of
       (_, Left err) => left err
@@ -179,7 +185,7 @@ parseRealNumberLiteral =
         lift . put $ state'
         pure $ MkToken (NUMBER rh) line column
 
-consumeWhiteSpace : Parser ()
+consumeWhiteSpace : Parser LexerState ()
 consumeWhiteSpace =
   do
     state <- lift get
@@ -190,7 +196,7 @@ consumeWhiteSpace =
         lift . put $ state'
         pure ()
 
-parseToken : Parser Token -> Parser Token
+parseToken : Parser LexerState Token -> Parser LexerState Token
 parseToken parser =
   do
     state <- lift get
@@ -200,20 +206,20 @@ parseToken parser =
         lift . put $ state'
         pure rh
 
-parseMultipleCharacterTokens : Parser Token
+parseMultipleCharacterTokens : Parser LexerState Token
 parseMultipleCharacterTokens = parseToken parser
   where
-    parser : Parser Token
+    parser : Parser LexerState Token
     parser =
           parseKeyword BANG_EQUAL    "!="
       <|> parseKeyword EQUAL_EQUAL   "=="
       <|> parseKeyword GREATER_EQUAL ">="
       <|> parseKeyword LESS_EQUAL    "<="
 
-parseSingleCharacterTokens : Parser Token
+parseSingleCharacterTokens : Parser LexerState Token
 parseSingleCharacterTokens = parseToken parser
   where
-    parser : Parser Token
+    parser : Parser LexerState Token
     parser =
           parseKeyword LEFT_PAREN  "("
       <|> parseKeyword RIGHT_PAREN ")"
@@ -232,10 +238,10 @@ parseSingleCharacterTokens = parseToken parser
       <|> parseKeyword GREATER     ">"
       <|> parseKeyword LESS        "<"
 
-parseKeywordTokens : Parser Token
+parseKeywordTokens : Parser LexerState Token
 parseKeywordTokens = parseToken parser
   where
-    parser : Parser Token
+    parser : Parser LexerState Token
     parser =
           parseKeyword IF     "if"
       <|> parseKeyword ELSE   "else"
@@ -250,13 +256,13 @@ parseKeywordTokens = parseToken parser
       <|> parseKeyword LET    "let"
       <|> parseKeyword CONST  "const"
 
-lexer : ParserState -> List Token -> (ParserState, List Token)
+lexer : LexerState -> List Token -> (LexerState, List Token)
 lexer state ls =
   case parse parser state of
     (state', Right rh) => lexer state' (rh::ls)
     (state', _) => (state', reverse ls)
   where
-    parser' : Parser Token
+    parser' : Parser LexerState Token
     parser' = parserOverwriteError (\err => "Unable to parse txt") $
           parseKeywordTokens
       <|> parseMultipleCharacterTokens
@@ -265,7 +271,7 @@ lexer state ls =
       <|> parseStringLiteral
       <|> parseIntegerLiteral
       <|> parseRealNumberLiteral
-    parser : Parser Token
+    parser : Parser LexerState Token
     parser = 
       do
         state <- lift get
@@ -279,5 +285,8 @@ lexer state ls =
                 lift . put $ state'
                 pure rh
 
-lexerText : String -> (ParserState, List Token)
-lexerText txt = lexer (MkParserState txt 0 0) []
+lexerText : String -> (LexerState, List Token)
+lexerText txt = lexer (MkLexerState txt 0 0) []
+
+parseText : Parser LexerState a -> String -> (LexerState, Either ErrorMsg a)
+parseText p str = runState (MkLexerState str 0 0) (runEitherT p)

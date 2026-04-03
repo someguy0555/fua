@@ -9,24 +9,15 @@ import Control.Monad.Error.Either
 import Debug.Trace
 import System.File
 
-record ParserState where
-  constructor MkParserState
-  input  : String
-  line   : Nat
-  column : Nat
-
 ErrorMsg = String
-Parser a = EitherT ErrorMsg (State ParserState) a
+Parser input return = EitherT ErrorMsg (State input) return
 
-parse : Parser a -> ParserState -> (ParserState, Either ErrorMsg a)
+parse : Parser b a -> b -> (b, Either ErrorMsg a)
 parse p state = runState state (runEitherT p)
-
-parseText : Parser a -> String -> (ParserState, Either ErrorMsg a)
-parseText p str = runState (MkParserState str 0 0) (runEitherT p)
 
 -- Runs the parser 0 or more times.
 -- Only ever returns 'Right'
-many : Parser a -> Parser ( List a )
+many : Parser b a -> Parser b ( List a )
 many parser =
   do
     state <- lift get
@@ -43,7 +34,7 @@ many parser =
 
 -- Runs the parser 1 or more times.
 -- Returns 'Left' on failure.
-some : Parser a -> Parser ( List a)
+some : Parser b a -> Parser b ( List a )
 some parser =
   do
     state <- lift get
@@ -54,7 +45,7 @@ some parser =
         right r
       (state', Left e) => left e -- Doesn't happen, but put this here anyway
 
-parserOverwriteError : (String -> String) -> Parser a -> Parser a
+parserOverwriteError : (String -> String) -> Parser b a -> Parser b a
 parserOverwriteError func parser =
   do
     state <- lift get
