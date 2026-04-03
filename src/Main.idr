@@ -12,6 +12,25 @@ import System.File
 import Parser
 import Lexer
 
+code = """
+fn main() {
+    print "Hello"
+}
+fn add(a, b) { return a + b }
+"""
+
+-- main : IO ()
+-- main =
+--   do
+--     let path = "lexer-test.txt"
+--     str <- readFile path
+--     case str of
+--       Left  e1 => print e1
+--       Right t1 =>
+--         case scan t1 of
+--           Left  e2 => print e2
+--           Right (st,t2) => print t2
+
 -- parseKeyword' : TokenType -> List Char -> Parser Token
 -- parseKeyword' _  [] = left "Can't parse empty string"
 -- parseKeyword' tt (h::[]) = 

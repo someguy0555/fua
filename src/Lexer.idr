@@ -34,7 +34,7 @@ data TokenType =
 
   -- Keywords
   IF | ELSE | WHILE | FOR | IN |
-  RETURN | PRINT |
+  FN | RETURN | PRINT |
   AND | OR |
   LET | CONST |
 
@@ -55,13 +55,17 @@ parseChar predicate =
   do
    MkParserState input line column <- lift get
    case unpack input of
-       [] => left "No character that matches the predicate found"
+       [] => left "No character found"
        (h::t) =>
          if predicate h
            then do
-             lift . put $ MkParserState ( pack t ) line ( column + 1 )
+             let newLine = if h == '\n' then line + 1 else line -- This is a bit hacky imo..
+             lift . put $ MkParserState ( pack t ) newLine ( column + 1 )
              pure h
-           else left $ "Character '" ++ show h ++ "' is not alpha"
+           else left $ "Character '" ++ show h ++ "' does not match given predicate"
+
+parseSpecificChar : Char -> Parser Char
+parseSpecificChar chr = parseChar (chr==)
 
 parseKeyword : TokenType -> String -> Parser Token
 parseKeyword tt prf =
@@ -71,7 +75,7 @@ parseKeyword tt prf =
        then do
          let prefixLen = length prf
          lift . put $ MkParserState ( pack . drop prefixLen . unpack $ input ) line ( column + prefixLen )
-         pure $ MkToken tt line ( column + prefixLen )
+         pure $ MkToken tt line column
        else left $ "Keyword '" ++ prf ++ "' not found"
 
 parseInteger : Parser Integer
@@ -84,8 +88,21 @@ parseInteger =
         lift . put $ state'
         pure . charsToInts $ rh
   where
+    toDigit : Char -> Int
+    toDigit '0' = 0
+    toDigit '1' = 1
+    toDigit '2' = 2
+    toDigit '3' = 3
+    toDigit '4' = 4
+    toDigit '5' = 5
+    toDigit '6' = 6
+    toDigit '7' = 7
+    toDigit '8' = 8
+    toDigit '9' = 9
+    toDigit  _  = 0
     charsToInts : List Char -> Integer
-    charsToInts = cast . foldl (\a, b => a * 10 + cast b) 0
+    charsToInts = cast . foldl (\a, b => a * 10 + toDigit b) 0
+
 
 parseIntegerLiteral : Parser Token
 parseIntegerLiteral =
@@ -112,7 +129,8 @@ parseInsideStringLiteral : Parser String
 parseInsideStringLiteral =
   do
     state <- lift get
-    let parser = many $ parseEscapedChar (isChar) <|> parseChar (isChar)
+    let parser = many $ parseEscapedChar (isChar) <|> parseChar (isChar) -- In progress
+    -- let parser = parseChar (isChar) -- In progress
     case (parse $ parser) state of
       (_, Left err) => left err
       (state', Right rh) => do
@@ -161,3 +179,105 @@ parseRealNumberLiteral =
         lift . put $ state'
         pure $ MkToken (NUMBER rh) line column
 
+consumeWhiteSpace : Parser ()
+consumeWhiteSpace =
+  do
+    state <- lift get
+    let parser = many . parseChar $ isSpace
+    case (parse parser) state of
+      (_, Left err) => left err
+      (state', Right rh) => do
+        lift . put $ state'
+        pure ()
+
+parseToken : Parser Token -> Parser Token
+parseToken parser =
+  do
+    state <- lift get
+    case (parse parser) state of
+      (_, Left err) => left err
+      (state', Right rh) => do
+        lift . put $ state'
+        pure rh
+
+parseMultipleCharacterTokens : Parser Token
+parseMultipleCharacterTokens = parseToken parser
+  where
+    parser : Parser Token
+    parser =
+          parseKeyword BANG_EQUAL    "!="
+      <|> parseKeyword EQUAL_EQUAL   "=="
+      <|> parseKeyword GREATER_EQUAL ">="
+      <|> parseKeyword LESS_EQUAL    "<="
+
+parseSingleCharacterTokens : Parser Token
+parseSingleCharacterTokens = parseToken parser
+  where
+    parser : Parser Token
+    parser =
+          parseKeyword LEFT_PAREN  "("
+      <|> parseKeyword RIGHT_PAREN ")"
+      <|> parseKeyword LEFT_BRACE  "{"
+      <|> parseKeyword RIGHT_BRACE "}"
+      <|> parseKeyword COMMA       ","
+      <|> parseKeyword DOT         "."
+      <|> parseKeyword SEMICOLON   ";"
+      <|> parseKeyword PLUS        "+"
+      <|> parseKeyword MINUS       "-"
+      <|> parseKeyword SLASH       "/"
+      <|> parseKeyword STAR        "*"
+      <|> parseKeyword PERCENT     "%"
+      <|> parseKeyword BANG        "!"
+      <|> parseKeyword EQUAL       "="
+      <|> parseKeyword GREATER     ">"
+      <|> parseKeyword LESS        "<"
+
+parseKeywordTokens : Parser Token
+parseKeywordTokens = parseToken parser
+  where
+    parser : Parser Token
+    parser =
+          parseKeyword IF     "if"
+      <|> parseKeyword ELSE   "else"
+      <|> parseKeyword WHILE  "while"
+      <|> parseKeyword FOR    "for"
+      <|> parseKeyword IN     "in"
+      <|> parseKeyword FN     "fn"
+      <|> parseKeyword RETURN "return"
+      <|> parseKeyword PRINT  "print"
+      <|> parseKeyword AND    "and"
+      <|> parseKeyword OR     "or"
+      <|> parseKeyword LET    "let"
+      <|> parseKeyword CONST  "const"
+
+lexer : ParserState -> List Token -> (ParserState, List Token)
+lexer state ls =
+  case parse parser state of
+    (state', Right rh) => lexer state' (rh::ls)
+    (state', _) => (state', reverse ls)
+  where
+    parser' : Parser Token
+    parser' = parserOverwriteError (\err => "Unable to parse txt") $
+          parseKeywordTokens
+      <|> parseMultipleCharacterTokens
+      <|> parseSingleCharacterTokens
+      <|> parseIdentifier
+      <|> parseStringLiteral
+      <|> parseIntegerLiteral
+      <|> parseRealNumberLiteral
+    parser : Parser Token
+    parser = 
+      do
+        state <- lift get
+        case (parse consumeWhiteSpace) state of
+          (_, Left _) => left "Unknown error"
+          (state', Right rh) => do
+            lift . put $ state'
+            case (parse parser') state' of
+              (_, Left err) => left err
+              (state', Right rh) => do
+                lift . put $ state'
+                pure rh
+
+lexerText : String -> (ParserState, List Token)
+lexerText txt = lexer (MkParserState txt 0 0) []
