@@ -23,17 +23,20 @@ record LexerState where
 data RealNumber = MkRealNumber Integer Integer
 Show RealNumber where
   show (MkRealNumber a b) = show a ++ "." ++ show b
+Eq RealNumber where
+  (==) (MkRealNumber n1a n1b) (MkRealNumber n2a n2b) = n1a == n2a && n1b == n2b
 
 data TokenType =
   -- Single character tokens
-  LEFT_PAREN | RIGHT_PAREN | LEFT_BRACE | RIGHT_BRACE |
-  COMMA | DOT | SEMICOLON | PLUS | MINUS | SLASH | STAR | PERCENT |
+  LEFT_PAREN | RIGHT_PAREN | LEFT_BRACE | RIGHT_BRACE | LEFT_SQUARE | RIGHT_SQUARE |
+  COMMA | SEMICOLON | PLUS | MINUS | SLASH | STAR | PERCENT |
 
   -- One or two character tokens
   BANG | BANG_EQUAL |
   EQUAL | EQUAL_EQUAL |
   GREATER | GREATER_EQUAL |
   LESS | LESS_EQUAL |
+  DOT | DOT_DOT |
 
   -- Literals
   IDENTIFIER String | STRING String | INTEGER Integer | NUMBER RealNumber |
@@ -43,9 +46,66 @@ data TokenType =
   FN | RETURN | PRINT |
   AND | OR |
   LET | CONST |
+  NILT | BOOL | CHAR | INT | REAL | -- Types
+  NILV | TRUE | FALSE | -- Values
+
+  NEWLINE |
 
   EOF
   ;
+
+-- This is so unbelievably ass..
+Eq TokenType where
+  (==) LEFT_PAREN LEFT_PAREN = True
+  (==) RIGHT_PAREN RIGHT_PAREN = True
+  (==) LEFT_BRACE LEFT_BRACE = True
+  (==) RIGHT_BRACE RIGHT_BRACE = True
+  (==) LEFT_SQUARE LEFT_SQUARE = True
+  (==) RIGHT_SQUARE RIGHT_SQUARE = True
+  (==) COMMA COMMA = True
+  (==) SEMICOLON SEMICOLON = True
+  (==) PLUS PLUS = True
+  (==) MINUS MINUS = True
+  (==) SLASH SLASH = True
+  (==) STAR STAR = True
+  (==) PERCENT PERCENT = True
+  (==) BANG BANG = True
+  (==) BANG_EQUAL BANG_EQUAL = True
+  (==) EQUAL EQUAL = True
+  (==) EQUAL_EQUAL EQUAL_EQUAL = True
+  (==) GREATER GREATER = True
+  (==) GREATER_EQUAL GREATER_EQUAL = True
+  (==) LESS LESS = True
+  (==) LESS_EQUAL LESS_EQUAL = True
+  (==) DOT DOT = True
+  (==) DOT_DOT DOT_DOT = True
+  (==) (IDENTIFIER s1) (IDENTIFIER s2) = s1 == s2
+  (==) (STRING s1) (STRING s2) = s1 == s2
+  (==) (INTEGER n1) (INTEGER n2) = n1 == n2
+  (==) (NUMBER r1) (NUMBER r2) = r1 == r2
+  (==) IF IF = True
+  (==) ELSE ELSE = True
+  (==) WHILE WHILE = True
+  (==) FOR FOR = True
+  (==) IN IN = True
+  (==) FN FN = True
+  (==) RETURN RETURN = True
+  (==) PRINT PRINT = True
+  (==) AND AND = True
+  (==) OR OR = True
+  (==) LET LET = True
+  (==) CONST CONST = True
+  (==) NILT NILT = True
+  (==) BOOL BOOL = True
+  (==) CHAR CHAR = True
+  (==) INT INT = True
+  (==) REAL REAL = True
+  (==) NILV NILV = True
+  (==) TRUE TRUE = True
+  (==) FALSE FALSE = True
+  (==) NEWLINE NEWLINE = True
+  (==) EOF EOF = True
+  (==) _ _ = False
 
 record Token where
   constructor MkToken
@@ -56,6 +116,9 @@ record Token where
 isChar : Char -> Bool
 isChar = isAlpha
 
+isTokenType : TokenType -> Token -> Bool
+isTokenType tt tk = if tk.token == tt then True else False
+
 parseChar : ( Char -> Bool ) -> Parser LexerState Char
 parseChar predicate =
   do
@@ -65,8 +128,9 @@ parseChar predicate =
        (h::t) =>
          if predicate h
            then do
-             let (newLine, newCol) = if h == '\n' then (line + 1, 0) else (line, column + 1) -- This is a bit hacky imo..
-             lift . put $ MkLexerState ( pack t ) newLine newCol
+             -- let (newLine, newCol) = if h == '\n' then (line + 1, 0) else (line, column + 1) -- This is a bit hacky imo..
+             -- lift . put $ MkLexerState ( pack t ) newLine newCol
+             lift . put $ MkLexerState ( pack t ) line ( column + 1)
              pure h
            else left $ "Character '" ++ show h ++ "' does not match given predicate"
 
@@ -161,7 +225,7 @@ parseIdentifier : Parser LexerState Token
 parseIdentifier =
   do
     state@(MkLexerState _ line column) <- lift get
-    let parser = (\hd, tl => pack $ hd::tl) <$> parseChar (isIdentifierHead) <*> (some $ parseChar (isIdentifierTail))
+    let parser = (\hd, tl => pack $ hd::tl) <$> parseChar (isIdentifierHead) <*> (many $ parseChar (isIdentifierTail))
     case (parse parser) state of
       (_, Left err) => left $ "In identifier: " ++ err
       (state', Right rh) => do
@@ -171,6 +235,8 @@ parseIdentifier =
     isIdentifierHead : Char -> Bool
     isIdentifierHead '_' = True
     isIdentifierHead chr = isAlpha chr
+    -- isIdentifierHead '_' = trace ("TRACE HEAD: " ++ show '_') $ True
+    -- isIdentifierHead chr = trace ("TRACE HEAD: " ++ show chr) $ isAlpha chr
     isIdentifierTail : Char -> Bool
     isIdentifierTail chr = isAlpha chr || isDigit chr
 
@@ -185,29 +251,33 @@ parseRealNumberLiteral =
         lift . put $ state'
         pure $ MkToken (NUMBER rh) line column
 
-consumeWhiteSpace : Parser LexerState ()
-consumeWhiteSpace =
+parseWhiteSpace : Parser LexerState String
+parseWhiteSpace =
   do
     state <- lift get
-    let parser = many . parseChar $ isSpace
+    let parser = many . parseChar $ (isPureSpace)
     case (parse parser) state of
       (_, Left err) => left err
       (state', Right rh) => do
         lift . put $ state'
-        pure ()
+        pure . pack $ rh
+  where
+    isPureSpace : Char -> Bool
+    isPureSpace c = ( isSpace c ) && ( not . isNL $ c )
 
-parseToken : Parser LexerState Token -> Parser LexerState Token
-parseToken parser =
+parseNewLine : Parser LexerState Token
+parseNewLine =
   do
-    state <- lift get
+    state@(MkLexerState _ line column) <- lift get
+    let parser = parseChar (isNL)
     case (parse parser) state of
       (_, Left err) => left err
-      (state', Right rh) => do
-        lift . put $ state'
-        pure rh
+      (MkLexerState input line' _, Right rh) => do
+        lift . put $ MkLexerState input ( line + 1 ) 0
+        pure $ MkToken NEWLINE line column
 
 parseMultipleCharacterTokens : Parser LexerState Token
-parseMultipleCharacterTokens = parseToken parser
+parseMultipleCharacterTokens = parseBasic parser
   where
     parser : Parser LexerState Token
     parser =
@@ -215,31 +285,34 @@ parseMultipleCharacterTokens = parseToken parser
       <|> parseKeyword EQUAL_EQUAL   "=="
       <|> parseKeyword GREATER_EQUAL ">="
       <|> parseKeyword LESS_EQUAL    "<="
+      <|> parseKeyword LESS_EQUAL    ".."
 
 parseSingleCharacterTokens : Parser LexerState Token
-parseSingleCharacterTokens = parseToken parser
+parseSingleCharacterTokens = parseBasic parser
   where
     parser : Parser LexerState Token
     parser =
-          parseKeyword LEFT_PAREN  "("
-      <|> parseKeyword RIGHT_PAREN ")"
-      <|> parseKeyword LEFT_BRACE  "{"
-      <|> parseKeyword RIGHT_BRACE "}"
-      <|> parseKeyword COMMA       ","
-      <|> parseKeyword DOT         "."
-      <|> parseKeyword SEMICOLON   ";"
-      <|> parseKeyword PLUS        "+"
-      <|> parseKeyword MINUS       "-"
-      <|> parseKeyword SLASH       "/"
-      <|> parseKeyword STAR        "*"
-      <|> parseKeyword PERCENT     "%"
-      <|> parseKeyword BANG        "!"
-      <|> parseKeyword EQUAL       "="
-      <|> parseKeyword GREATER     ">"
-      <|> parseKeyword LESS        "<"
+          parseKeyword LEFT_PAREN   "("
+      <|> parseKeyword RIGHT_PAREN  ")"
+      <|> parseKeyword LEFT_BRACE   "{"
+      <|> parseKeyword RIGHT_BRACE  "}"
+      <|> parseKeyword LEFT_SQUARE  "["
+      <|> parseKeyword RIGHT_SQUARE "]"
+      <|> parseKeyword COMMA        ","
+      <|> parseKeyword DOT          "."
+      <|> parseKeyword SEMICOLON    ";"
+      <|> parseKeyword PLUS         "+"
+      <|> parseKeyword MINUS        "-"
+      <|> parseKeyword SLASH        "/"
+      <|> parseKeyword STAR         "*"
+      <|> parseKeyword PERCENT      "%"
+      <|> parseKeyword BANG         "!"
+      <|> parseKeyword EQUAL        "="
+      <|> parseKeyword GREATER      ">"
+      <|> parseKeyword LESS         "<"
 
 parseKeywordTokens : Parser LexerState Token
-parseKeywordTokens = parseToken parser
+parseKeywordTokens = parseBasic parser
   where
     parser : Parser LexerState Token
     parser =
@@ -255,16 +328,25 @@ parseKeywordTokens = parseToken parser
       <|> parseKeyword OR     "or"
       <|> parseKeyword LET    "let"
       <|> parseKeyword CONST  "const"
+      <|> parseKeyword NILT   "Nil"
+      <|> parseKeyword BOOL   "Bool"
+      <|> parseKeyword CHAR   "Char"
+      <|> parseKeyword INT    "Int"
+      <|> parseKeyword REAL   "Real"
+      <|> parseKeyword NILV   "nil"
+      <|> parseKeyword TRUE   "true"
+      <|> parseKeyword FALSE  "false"
 
-lexer : LexerState -> List Token -> (LexerState, List Token)
-lexer state ls =
+lexer : (LexerState, List Token) -> (LexerState, List Token, String)
+lexer (state, ls) =
   case parse parser state of
-    (state', Right rh) => lexer state' (rh::ls)
-    (state', _) => (state', reverse ls)
+    (state', Right rh) => lexer (state', (rh::ls))
+    (state', Left err') => (state', reverse ls, err')
   where
     parser' : Parser LexerState Token
-    parser' = parserOverwriteError (\err => "Unable to parse txt") $
-          parseKeywordTokens
+    parser' = -- parserOverwriteError (\err => "Unable to parse txt") $
+          parseNewLine
+      <|> parseKeywordTokens
       <|> parseMultipleCharacterTokens
       <|> parseSingleCharacterTokens
       <|> parseIdentifier
@@ -275,7 +357,7 @@ lexer state ls =
     parser = 
       do
         state <- lift get
-        case (parse consumeWhiteSpace) state of
+        case (parse parseWhiteSpace) state of
           (_, Left _) => left "Unknown error"
           (state', Right rh) => do
             lift . put $ state'
@@ -285,8 +367,8 @@ lexer state ls =
                 lift . put $ state'
                 pure rh
 
-lexerText : String -> (LexerState, List Token)
-lexerText txt = lexer (MkLexerState txt 0 0) []
+lexerText : String -> (LexerState, List Token, String)
+lexerText txt = lexer ((MkLexerState txt 0 0), [])
 
 parseText : Parser LexerState a -> String -> (LexerState, Either ErrorMsg a)
 parseText p str = runState (MkLexerState str 0 0) (runEitherT p)

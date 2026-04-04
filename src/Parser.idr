@@ -55,3 +55,12 @@ parserOverwriteError func parser =
         lift . put $ state'
         pure rh
 
+parseBasic : Parser a b -> Parser a b
+parseBasic parser =
+  do
+    state <- lift get
+    case (parse parser) state of
+      (_, Left err) => left err
+      (state', Right rh) => do
+        lift . put $ state'
+        pure rh

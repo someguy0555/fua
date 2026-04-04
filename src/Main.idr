@@ -11,6 +11,7 @@ import System.File
 
 import Parser
 import Lexer
+import Expr
 
 code = """
 fn main() {
