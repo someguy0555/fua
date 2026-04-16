@@ -5,11 +5,13 @@ import Data.String
 import Control.Monad.State
 import Data.Either
 import Control.Monad.Error.Either
+import Deriving.Show
 
 import Debug.Trace
 import System.File
 
 import Parser
+-- %language ElabReflection
 
 record LexerState where
   constructor MkLexerState
@@ -48,6 +50,7 @@ data TokenType =
   LET | CONST |
   NILT | BOOL | CHAR | INT | REAL | -- Types
   NILV | TRUE | FALSE | -- Values
+  BREAK |
 
   NEWLINE |
 
@@ -103,15 +106,77 @@ Eq TokenType where
   (==) NILV NILV = True
   (==) TRUE TRUE = True
   (==) FALSE FALSE = True
+  (==) BREAK BREAK = True
   (==) NEWLINE NEWLINE = True
   (==) EOF EOF = True
   (==) _ _ = False
+
+-- tokenTypeShow : Show TokenType
+-- tokenTypeShow = %runElab derive
+
+Show TokenType where
+  show LEFT_PAREN = "LEFT_PAREN"
+  show RIGHT_PAREN = "RIGHT_PAREN"
+  show LEFT_BRACE = "LEFT_BRACE"
+  show RIGHT_BRACE = "RIGHT_BRACE"
+  show LEFT_SQUARE = "LEFT_SQUARE"
+  show RIGHT_SQUARE = "RIGHT_SQUARE"
+  show COMMA = "COMMA"
+  show SEMICOLON = "SEMICOLON"
+  show PLUS = "PLUS"
+  show MINUS = "MINUS"
+  show SLASH = "SLASH"
+  show STAR = "STAR"
+  show PERCENT = "PERCENT"
+  show BANG = "BANG"
+  show BANG_EQUAL = "BANG_EQUAL"
+  show EQUAL = "EQUAL"
+  show EQUAL_EQUAL = "EQUAL_EQUAL"
+  show GREATER = "GREATER"
+  show GREATER_EQUAL = "GREATER_EQUAL"
+  show LESS = "LESS"
+  show LESS_EQUAL = "LESS_EQUAL"
+  show DOT = "DOT"
+  show DOT_DOT = "DOT_DOT"
+
+  show (IDENTIFIER s) = "IDENTIFIER " ++ show s
+  show (STRING s)     = "STRING " ++ show s
+  show (INTEGER n)    = "INTEGER " ++ show n
+  show (NUMBER r)     = "NUMBER " ++ show r
+
+  show IF = "IF"
+  show ELSE = "ELSE"
+  show WHILE = "WHILE"
+  show FOR = "FOR"
+  show IN = "IN"
+  show FN = "FN"
+  show RETURN = "RETURN"
+  show PRINT = "PRINT"
+  show AND = "AND"
+  show OR = "OR"
+  show LET = "LET"
+  show CONST = "CONST"
+  show NILT = "NILT"
+  show BOOL = "BOOL"
+  show CHAR = "CHAR"
+  show INT = "INT"
+  show REAL = "REAL"
+  show NILV = "NILV"
+  show TRUE = "TRUE"
+  show FALSE = "FALSE"
+  show BREAK = "BREAK"
+
+  show NEWLINE = "NEWLINE"
+  show EOF = "EOF"
 
 record Token where
   constructor MkToken
   token  : TokenType
   line   : Nat
   column : Nat
+
+Show Token where
+  show (MkToken token line column) = "{ token = " ++ show token ++ ", line = " ++ show line ++ ", column = " ++ show column ++ "}"
 
 isChar : Char -> Bool
 isChar = isAlpha
@@ -124,7 +189,7 @@ parseChar predicate =
   do
    MkLexerState input line column <- lift get
    case unpack input of
-       [] => left "No character found"
+       [] => left [ "No character found" ]
        (h::t) =>
          if predicate h
            then do
@@ -132,7 +197,7 @@ parseChar predicate =
              -- lift . put $ MkLexerState ( pack t ) newLine newCol
              lift . put $ MkLexerState ( pack t ) line ( column + 1)
              pure h
-           else left $ "Character '" ++ show h ++ "' does not match given predicate"
+             else left [ "Character '" ++ show h ++ "' does not match given predicate" ]
 
 parseSpecificChar : Char -> Parser LexerState Char
 parseSpecificChar chr = parseChar (chr==)
@@ -146,14 +211,14 @@ parseKeyword tt prf =
          let prefixLen = length prf
          lift . put $ MkLexerState ( pack . drop prefixLen . unpack $ input ) line ( column + prefixLen )
          pure $ MkToken tt line column
-       else left $ "Keyword '" ++ prf ++ "' not found"
+       else left [ "Keyword '" ++ prf ++ "' not found" ]
 
 parseInteger : Parser LexerState Integer
 parseInteger =
   do
     state <- lift get
     case (parse . some $ parseChar (isDigit) ) state of
-      (_, Left err) => left "Expected to find atleast one digit in integer"
+      (_, Left err) => left [ "Expected to find atleast one digit in integer" ]
       (state', Right rh) => do
         lift . put $ state'
         pure . charsToInts $ rh
@@ -207,13 +272,23 @@ parseInsideStringLiteral =
         lift . put $ state'
         pure . pack $ rh
 
+replaceLastEl : (a -> a) -> List a -> List a
+replaceLastEl func [] = []
+replaceLastEl func ls@(_::_) = ini ++ [func lst]
+  where
+    ini = init ls
+    lst = last ls
+
+modifyLastError : (String -> String) -> ErrorMsg -> ErrorMsg
+modifyLastError func = replaceLastEl func
+
 parseStringLiteral : Parser LexerState Token
 parseStringLiteral =
   do
     state@(MkLexerState _ line column) <- lift get
-    let firstQuoteParser = parserOverwriteError (\err => "No start to string literal found") $ parseChar ('"'==)
-    let lastQuoteParser  = parserOverwriteError (\err => "No end to string literal found" ) $ parseChar ('"'==)
-    let stringLiteralParser = parserOverwriteError (\err => "Inside string literal: " ++ err) $ parseInsideStringLiteral
+    let firstQuoteParser    = parserOverwriteError (\err => [ "No start to string literal found" ] ) $ parseChar ('"'==)
+    let lastQuoteParser     = parserOverwriteError (\err => [ "No end to string literal found"   ] ) $ parseChar ('"'==)
+    let stringLiteralParser = parserOverwriteError (modifyLastError (\err' => "Inside string literal: " ++ err')) $ parseInsideStringLiteral
     let parser = (\_, str, _ => str) <$> firstQuoteParser <*> stringLiteralParser <*> lastQuoteParser
     case (parse parser) state of 
       (_, Left err) => left err
@@ -227,7 +302,9 @@ parseIdentifier =
     state@(MkLexerState _ line column) <- lift get
     let parser = (\hd, tl => pack $ hd::tl) <$> parseChar (isIdentifierHead) <*> (many $ parseChar (isIdentifierTail))
     case (parse parser) state of
-      (_, Left err) => left $ "In identifier: " ++ err
+      -- (_, Left err) => left "In identifier: " ++ err
+      (_, Left []) => left [ "Unknow error in parseIdentifier" ]
+      (_, Left err@(_::_)) => left $ (init err) ++ [ ("In identifier: " ++ last err) ]
       (state', Right rh) => do
         lift . put $ state'
         pure $ MkToken (IDENTIFIER rh) line column
@@ -336,8 +413,9 @@ parseKeywordTokens = parseBasic parser
       <|> parseKeyword NILV   "nil"
       <|> parseKeyword TRUE   "true"
       <|> parseKeyword FALSE  "false"
+      <|> parseKeyword BREAK  "break"
 
-lexer : (LexerState, List Token) -> (LexerState, List Token, String)
+lexer : (LexerState, List Token) -> (LexerState, List Token, ErrorMsg)
 lexer (state, ls) =
   case parse parser state of
     (state', Right rh) => lexer (state', (rh::ls))
@@ -358,7 +436,7 @@ lexer (state, ls) =
       do
         state <- lift get
         case (parse parseWhiteSpace) state of
-          (_, Left _) => left "Unknown error"
+          (_, Left _) => left [ "Unknown error" ]
           (state', Right rh) => do
             lift . put $ state'
             case (parse parser') state' of
@@ -367,7 +445,7 @@ lexer (state, ls) =
                 lift . put $ state'
                 pure rh
 
-lexerText : String -> (LexerState, List Token, String)
+lexerText : String -> (LexerState, List Token, ErrorMsg)
 lexerText txt = lexer ((MkLexerState txt 0 0), [])
 
 parseText : Parser LexerState a -> String -> (LexerState, Either ErrorMsg a)

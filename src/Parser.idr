@@ -9,7 +9,7 @@ import Control.Monad.Error.Either
 import Debug.Trace
 import System.File
 
-ErrorMsg = String
+ErrorMsg = List String
 Parser input return = EitherT ErrorMsg (State input) return
 
 parse : Parser b a -> b -> (b, Either ErrorMsg a)
@@ -39,13 +39,13 @@ some parser =
   do
     state <- lift get
     case ( parse $ many parser ) state of
-      (_, Right []) => left "Expected at least one match"
+      (_, Right []) => left ["Expected at least one match"]
       (state', Right r) => do
         lift . put $ state'
         right r
       (state', Left e) => left e -- Doesn't happen, but put this here anyway
 
-parserOverwriteError : (String -> String) -> Parser b a -> Parser b a
+parserOverwriteError : (ErrorMsg -> ErrorMsg) -> Parser b a -> Parser b a
 parserOverwriteError func parser =
   do
     state <- lift get
@@ -64,3 +64,25 @@ parseBasic parser =
       (state', Right rh) => do
         lift . put $ state'
         pure rh
+
+tryParse : a -> Parser a b -> Parser a b
+tryParse resetState parser =
+  do
+    state <- lift get
+    case (parse parser) state of
+      (_, Left err) => do
+        lift . put $ resetState -- attempting to restore the old state
+        left err
+      (state', Right rh) => do
+        lift . put $ state'
+        pure rh
+
+-- orElse : Parser a b -> Parser a b -> Parser a b
+-- orElse parserA parserB =
+--   do
+--     state <- lift get
+--     case (parse parserA) state of
+--          (state', Right rh) => do
+--            lift . put $ state'
+--            pure rh
+--          (_, Left err) => left err

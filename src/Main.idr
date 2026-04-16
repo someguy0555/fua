@@ -12,12 +12,23 @@ import System.File
 import Parser
 import Lexer
 import Expr
+import Stmt
 
-code = """
+code00 = """
 fn main() {
     print "Hello"
 }
 fn add(a, b) { return a + b }
+"""
+
+-- lexer : (LexerState, List Token) -> (LexerState, List Token, ErrorMsg)
+-- let i = 0
+code01 = """
+while i < 100 {
+  i = i + 1 
+}
+i = 10
+while i == 10 { if i == 10 { break } }
 """
 
 -- main : IO ()
