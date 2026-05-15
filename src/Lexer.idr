@@ -19,6 +19,8 @@ record LexerState where
   line   : Nat
   column : Nat
 
+mkDummyLexerState input = MkLexerState input 0 0
+
 -- This is a very temporary solution to the problem
 -- It should be replaced with something else,
 -- probably a foreign library.
@@ -31,7 +33,7 @@ Eq RealNumber where
 data TokenType =
   -- Single character tokens
   LEFT_PAREN | RIGHT_PAREN | LEFT_BRACE | RIGHT_BRACE | LEFT_SQUARE | RIGHT_SQUARE |
-  COMMA | SEMICOLON | PLUS | MINUS | SLASH | STAR | PERCENT |
+  COMMA | COLON | SEMICOLON | PLUS | MINUS | SLASH | STAR | PERCENT |
 
   -- One or two character tokens
   BANG | BANG_EQUAL |
@@ -48,7 +50,7 @@ data TokenType =
   FN | RETURN | PRINT |
   AND | OR |
   LET | CONST |
-  NILT | BOOL | CHAR | INT | REAL | -- Types
+  NILT | BOOL | INT | REAL | STRINGT | -- Types
   NILV | TRUE | FALSE | -- Values
   BREAK |
 
@@ -66,6 +68,7 @@ Eq TokenType where
   (==) LEFT_SQUARE LEFT_SQUARE = True
   (==) RIGHT_SQUARE RIGHT_SQUARE = True
   (==) COMMA COMMA = True
+  (==) COLON COLON = True
   (==) SEMICOLON SEMICOLON = True
   (==) PLUS PLUS = True
   (==) MINUS MINUS = True
@@ -100,9 +103,10 @@ Eq TokenType where
   (==) CONST CONST = True
   (==) NILT NILT = True
   (==) BOOL BOOL = True
-  (==) CHAR CHAR = True
+  -- (==) CHAR CHAR = True
   (==) INT INT = True
   (==) REAL REAL = True
+  (==) STRINGT STRINGT = True
   (==) NILV NILV = True
   (==) TRUE TRUE = True
   (==) FALSE FALSE = True
@@ -122,6 +126,7 @@ Show TokenType where
   show LEFT_SQUARE = "LEFT_SQUARE"
   show RIGHT_SQUARE = "RIGHT_SQUARE"
   show COMMA = "COMMA"
+  show COLON = "COLON"
   show SEMICOLON = "SEMICOLON"
   show PLUS = "PLUS"
   show MINUS = "MINUS"
@@ -158,9 +163,10 @@ Show TokenType where
   show CONST = "CONST"
   show NILT = "NILT"
   show BOOL = "BOOL"
-  show CHAR = "CHAR"
+  -- show CHAR = "CHAR"
   show INT = "INT"
   show REAL = "REAL"
+  show STRINGT = "STRINGT"
   show NILV = "NILV"
   show TRUE = "TRUE"
   show FALSE = "FALSE"
@@ -328,16 +334,19 @@ parseRealNumberLiteral =
         lift . put $ state'
         pure $ MkToken (NUMBER rh) line column
 
-parseWhiteSpace : Parser LexerState String
+parseWhiteSpace : Parser LexerState ()
 parseWhiteSpace =
   do
-    state <- lift get
-    let parser = many . parseChar $ (isPureSpace)
-    case (parse parser) state of
-      (_, Left err) => left err
-      (state', Right rh) => do
-        lift . put $ state'
-        pure . pack $ rh
+    _ <- many $ parseChar (isPureSpace)
+    pure ()
+  -- do
+  --   state <- lift get
+  --   let parser = many . parseChar $ (isPureSpace)
+  --   case (parse parser) state of
+  --     (_, Left err) => left err
+  --     (state', Right rh) => do
+  --       lift . put $ state'
+  --       pure . pack $ rh
   where
     isPureSpace : Char -> Bool
     isPureSpace c = ( isSpace c ) && ( not . isNL $ c )
@@ -377,6 +386,7 @@ parseSingleCharacterTokens = parseBasic parser
       <|> parseKeyword RIGHT_SQUARE "]"
       <|> parseKeyword COMMA        ","
       <|> parseKeyword DOT          "."
+      <|> parseKeyword COLON        ":"
       <|> parseKeyword SEMICOLON    ";"
       <|> parseKeyword PLUS         "+"
       <|> parseKeyword MINUS        "-"
@@ -393,60 +403,81 @@ parseKeywordTokens = parseBasic parser
   where
     parser : Parser LexerState Token
     parser =
-          parseKeyword IF     "if"
-      <|> parseKeyword ELSE   "else"
-      <|> parseKeyword WHILE  "while"
-      <|> parseKeyword FOR    "for"
-      <|> parseKeyword IN     "in"
-      <|> parseKeyword FN     "fn"
-      <|> parseKeyword RETURN "return"
-      <|> parseKeyword PRINT  "print"
-      <|> parseKeyword AND    "and"
-      <|> parseKeyword OR     "or"
-      <|> parseKeyword LET    "let"
-      <|> parseKeyword CONST  "const"
-      <|> parseKeyword NILT   "Nil"
-      <|> parseKeyword BOOL   "Bool"
-      <|> parseKeyword CHAR   "Char"
-      <|> parseKeyword INT    "Int"
-      <|> parseKeyword REAL   "Real"
-      <|> parseKeyword NILV   "nil"
-      <|> parseKeyword TRUE   "true"
-      <|> parseKeyword FALSE  "false"
-      <|> parseKeyword BREAK  "break"
+          parseKeyword IF      "if"
+      <|> parseKeyword ELSE    "else"
+      <|> parseKeyword WHILE   "while"
+      <|> parseKeyword FOR     "for"
+      <|> parseKeyword IN      "in"
+      <|> parseKeyword FN      "fn"
+      <|> parseKeyword RETURN  "return"
+      <|> parseKeyword PRINT   "print"
+      <|> parseKeyword AND     "and"
+      <|> parseKeyword OR      "or"
+      <|> parseKeyword LET     "let"
+      <|> parseKeyword CONST   "const"
+      <|> parseKeyword NILT    "Nil"
+      <|> parseKeyword BOOL    "Bool"
+      -- <|> parseKeyword CHAR "Char"
+      <|> parseKeyword INT     "Int"
+      <|> parseKeyword REAL    "Real"
+      <|> parseKeyword STRINGT "String"
+      <|> parseKeyword NILV    "nil"
+      <|> parseKeyword TRUE    "true"
+      <|> parseKeyword FALSE   "false"
+      <|> parseKeyword BREAK   "break"
 
-lexer : (LexerState, List Token) -> (LexerState, List Token, ErrorMsg)
-lexer (state, ls) =
-  case parse parser state of
-    (state', Right rh) => lexer (state', (rh::ls))
-    (state', Left err') => (state', reverse ls, err')
-  where
-    parser' : Parser LexerState Token
-    parser' = -- parserOverwriteError (\err => "Unable to parse txt") $
-          parseNewLine
-      <|> parseKeywordTokens
-      <|> parseMultipleCharacterTokens
-      <|> parseSingleCharacterTokens
-      <|> parseIdentifier
-      <|> parseStringLiteral
-      <|> parseIntegerLiteral
-      <|> parseRealNumberLiteral
-    parser : Parser LexerState Token
-    parser = 
-      do
-        state <- lift get
-        case (parse parseWhiteSpace) state of
-          (_, Left _) => left [ "Unknown error" ]
-          (state', Right rh) => do
-            lift . put $ state'
-            case (parse parser') state' of
-              (_, Left err) => left err
-              (state', Right rh) => do
-                lift . put $ state'
-                pure rh
+lexToken : Parser LexerState Token
+lexToken = -- parserOverwriteError (\err => "Unable to parse txt") $
+      parseNewLine
+  <|> parseKeywordTokens
+  <|> parseMultipleCharacterTokens
+  <|> parseSingleCharacterTokens
+  <|> parseIdentifier
+  <|> parseStringLiteral
+  <|> parseIntegerLiteral
+  <|> parseRealNumberLiteral
 
-lexerText : String -> (LexerState, List Token, ErrorMsg)
-lexerText txt = lexer ((MkLexerState txt 0 0), [])
+lexTokens : Parser LexerState (List Token)
+lexTokens = many lexToken
 
 parseText : Parser LexerState a -> String -> (LexerState, Either ErrorMsg a)
 parseText p str = runState (MkLexerState str 0 0) (runEitherT p)
+
+lexer : Parser LexerState (List Token)
+lexer = many lexer'
+  where
+    lexer' =
+      do
+        _ <- parseWhiteSpace
+        tok <- lexToken
+        pure tok
+
+-- lexer : (LexerState, List Token) -> (LexerState, List Token, ErrorMsg)
+-- lexer (state, ls) =
+--   case parse parser state of
+--     (state', Right rh) => lexer (state', (rh::ls))
+--     (state', Left err') => (state', reverse ls, err')
+--   where
+--     parser' : Parser LexerState Token
+--     parser' = -- parserOverwriteError (\err => "Unable to parse txt") $
+--           parseNewLine
+--       <|> parseKeywordTokens
+--       <|> parseMultipleCharacterTokens
+--       <|> parseSingleCharacterTokens
+--       <|> parseIdentifier
+--       <|> parseStringLiteral
+--       <|> parseIntegerLiteral
+--       <|> parseRealNumberLiteral
+--     parser : Parser LexerState Token
+--     parser = 
+--       do
+--         state <- lift get
+--         case (parse parseWhiteSpace) state of
+--           (_, Left _) => left [ "Unknown error" ]
+--           (state', Right rh) => do
+--             lift . put $ state'
+--             case (parse parser') state' of
+--               (_, Left err) => left err
+--               (state', Right rh) => do
+--                 lift . put $ state'
+--                 pure rh

@@ -21,7 +21,6 @@ fn main() {
 fn add(a, b) { return a + b }
 """
 
--- lexer : (LexerState, List Token) -> (LexerState, List Token, ErrorMsg)
 -- let i = 0
 code01 = """
 while i < 100 {
@@ -30,6 +29,68 @@ while i < 100 {
 i = 10
 while i == 10 { if i == 10 { break } }
 """
+
+tokens01 : List Token
+tokens01 = [
+    MkToken WHILE 0 0,
+    MkToken (IDENTIFIER "i") 0 6,
+    MkToken LESS 0 8,
+    MkToken (INTEGER 100) 0 10,
+    MkToken LEFT_BRACE 0 14,
+    MkToken NEWLINE 0 15,
+    MkToken (IDENTIFIER "i") 1 2,
+    MkToken EQUAL 1 4,
+    MkToken (IDENTIFIER "i") 1 6,
+    MkToken PLUS 1 8,
+    MkToken (INTEGER 1) 1 10,
+    MkToken NEWLINE 1 12,
+    MkToken RIGHT_BRACE 2 0,
+    MkToken NEWLINE 2 1,
+    MkToken (IDENTIFIER "i") 3 0,
+    MkToken EQUAL 3 2,
+    MkToken (INTEGER 10) 3 4,
+    MkToken NEWLINE 3 6,
+    MkToken WHILE 4 0,
+    MkToken (IDENTIFIER "i") 4 6,
+    MkToken EQUAL_EQUAL 4 8,
+    MkToken (INTEGER 10) 4 11,
+    MkToken LEFT_BRACE 4 14,
+    MkToken IF 4 16,
+    MkToken (IDENTIFIER "i") 4 19,
+    MkToken EQUAL_EQUAL 4 21,
+    MkToken (INTEGER 10) 4 24,
+    MkToken LEFT_BRACE 4 27,
+    MkToken BREAK 4 29,
+    MkToken RIGHT_BRACE 4 35,
+    MkToken RIGHT_BRACE 4 37
+  ]
+
+
+-- stmts01 : List Stmt
+-- stmts01 = [
+--     StmtWhile
+--     (ExprOperator TypeUnknown Less [ ExprVariable TypeUnknown "i", ExprOperand TypeInt 100 ])
+--     [
+--       StmtAssign "i"
+--       (ExprOperator TypeUnknown Add [ ExprVariable TypeUnknown "i", ExprOperand TypeInt 1 ])
+--     ]
+--     ,
+--     StmtAssign "i"
+--     (ExprOperand TypeInt 10)
+--     ,
+--     StmtWhile
+--     (ExprOperator TypeUnknown Equal [ ExprVariable TypeUnknown "i", ExprOperand TypeInt 10 ])
+--     [
+--       StmtIf
+--       (ExprOperator TypeUnknown Equal [ ExprVariable TypeUnknown "i", ExprOperand TypeInt 10 ])
+--       [
+--         StmtBreak
+--       ]
+--     ]
+--  ]
+
+stmts01 : (List Token, Either ErrorMsg ( List Stmt ))
+stmts01 = parse (parseStmts) tokens01
 
 -- main : IO ()
 -- main =

@@ -13,6 +13,9 @@ import System.File
 
 import Parser
 import Lexer
+import Utility
+
+Identifier = String
 
 {-
   <expr>       := equality;
@@ -49,12 +52,18 @@ data ExprType : Type where
   TypeInt     : ExprType
   TypeReal    : ExprType
   TypeString  : ExprType
-  TypeTable   : (SortedMap String ExprType) -> ExprType -- Mapping strings to types.
+  TypeFunc    : List ExprType -> ExprType -> ExprType
+  TypeTable   : (SortedMap Identifier ExprType) -> ExprType -- Mapping strings to types.
 
 data Expr : Type where
-  ExprOperand  : ExprType -> a -> Expr
-  ExprOperator : ExprType -> Operator n -> Vect n Expr -> Expr
+  ExprUnassigned : ExprType -> Expr
+  ExprOperand    : ExprType -> a -> Expr
+  ExprVariable   : ExprType -> Identifier -> Expr
+  ExprOperator   : ExprType -> Operator n -> Vect n Expr -> Expr
+  ExprCall       : Expr -> List Expr -> Expr
 
+-- Your mother is not total.
+covering
 Show ExprType where
   show TypeUnknown = "TypeUnknown"
   show TypeNil     = "TypeNil"
@@ -62,8 +71,10 @@ Show ExprType where
   show TypeInt     = "TypeInt"
   show TypeReal    = "TypeReal"
   show TypeString  = "TypeString"
+  show (TypeFunc arguments result) = show arguments ++ " -> " ++ show result
   -- show (TypeTable tbl)   = "TypeTable {" ++ show tbl ++ "}"
-  show (TypeTable tbl)   = "TypeTable { ... }"
+  show (TypeTable tbl)   = "TypeTable " ++ show tbl
+  -- show (TypeTable tbl)   = "TypeTable { ... }"
 
 Show (Operator n) where
   show _ = "Operator"
@@ -78,20 +89,6 @@ expr0 = ExprOperator TypeUnknown Add [ExprOperand TypeUnknown 2, ExprOperand Typ
 
 myTrace : (msg : String) -> (result : a) -> a
 myTrace x val = force $ unsafePerformIO (do putStrLn x; pure val)
-
-parseToken : ( Token -> Bool ) -> Parser (List Token) Token
-parseToken predicate =
-  do
-    tokens <- lift get
-    case tokens of
-      [] => left [ "No token found" ]
-      (x::xs) => if predicate x
-        then do
-          lift . put $ xs
-          pure x
-          -- pure . trace ("parseToken-right: tokens'" ++ show x ++ "::" ++ show xs ++ "'") $ x
-        -- else left [ "parseToken: token '" ++ (show x) ++ "' does not fulfill predicate" ]
-        else left [ "parseToken: token '" ++ (show x) ++ "' in '" ++ show tokens ++ "' does not fulfill predicate" ]
 
 parseOperator : Operator n -> (Token -> Bool) -> Parser (List Token) ( Operator n )
 parseOperator op predicate =
@@ -114,36 +111,20 @@ parseOperatorUsingTokenType op tt =
     $
     parseOperator op (isTokenType tt)
 
-isIntegerToken : Token -> Bool
-isIntegerToken (MkToken (INTEGER _) _ _) = True
-isIntegerToken _ = False
-
-isRealNumberToken : Token -> Bool
-isRealNumberToken (MkToken (NUMBER  _) _ _) = True
-isRealNumberToken _ = False
-
-isNumber : Token -> Bool
-isNumber tk = isIntegerToken tk || isRealNumberToken tk
-
-isStringLiteral : Token -> Bool
-isStringLiteral (MkToken (STRING  _) _ _) = True
-isStringLiteral _ = False
-
-isIdentifier : Token -> Bool
-isIdentifier (MkToken (IDENTIFIER _) _ _) = True
-isIdentifier _ = False
-
-parsePrimary     : Parser (List Token) Expr
-parseUnary       : Parser (List Token) Expr
-parseExpr        : Parser (List Token) Expr
-parseFactor      : Parser (List Token) Expr
-parseTerm        : Parser (List Token) Expr
-parseLogical     : Parser (List Token) Expr
-parseComparison  : Parser (List Token) Expr
-parseEquality    : Parser (List Token) Expr
+parsePrimary         : Parser (List Token) Expr
+parsePrimaryWithCall : Parser (List Token) Expr
+parseUnary           : Parser (List Token) Expr
+parseExpr            : Parser (List Token) Expr
+parseFactor          : Parser (List Token) Expr
+parseTerm            : Parser (List Token) Expr
+parseLogical         : Parser (List Token) Expr
+parseComparison      : Parser (List Token) Expr
+parseEquality        : Parser (List Token) Expr
 
 parsePrimary =
       parseNumber
+  <|> parseBooleanLiteral
+  <|> parseNilLiteral
   <|> parseStringLiteral
   <|> parseIdentifier
   <|> parseParens
@@ -159,6 +140,21 @@ parsePrimary =
           NUMBER r  => ExprOperand TypeReal r
           _         => ExprOperand TypeUnknown tok
 
+    parseBooleanLiteral =
+      do
+        MkToken tok _ _ <- parseToken (isBooleanLiteral)
+        pure $ case tok of
+          TRUE  => ExprOperand TypeBool True
+          FALSE => ExprOperand TypeBool True
+          _     => ExprOperand TypeUnknown tok
+
+    parseNilLiteral =
+      do
+        MkToken tok _ _ <- parseToken (isNilLiteral)
+        pure $ case tok of
+          NILV  => ExprOperand TypeNil ()
+          _     => ExprOperand TypeUnknown tok
+
     parseStringLiteral =
       do
         MkToken tok _ _ <- parseToken isStringLiteral
@@ -170,8 +166,8 @@ parsePrimary =
       do
         MkToken tok _ _ <- parseToken isIdentifier
         pure $ case tok of
-          IDENTIFIER s => ExprOperand TypeUnknown s
-          _            => ExprOperand TypeUnknown tok
+          IDENTIFIER s => ExprVariable TypeUnknown s
+          _            => ExprOperand  TypeUnknown tok
 
     parseParens =
       do
@@ -179,6 +175,62 @@ parsePrimary =
         e <- parseExpr
         _ <- parseToken (isTokenType RIGHT_PAREN)
         pure e
+
+parsePrimaryWithCall =
+  do
+    base <- parsePrimary
+    parseCallChain base
+
+  where
+    parseCallChain : Expr -> Parser (List Token) Expr
+    runCall : Parser (List Token) (List Expr)
+    parseArgs : Parser (List Token) (List Expr)
+
+    parseCallChain fn =
+      do
+        state <- lift get
+
+        case parse runCall state of
+          (_, Left _) =>
+            pure fn
+
+          (state', Right args) =>
+            do
+              lift $ put state'
+              parseCallChain (ExprCall fn args)
+
+    runCall =
+      do
+        _ <- parseToken (tokenTypeIs LEFT_PAREN)
+        _ <- many parseLineEnd
+
+        args <- parseArgs
+
+        _ <- many parseLineEnd
+        _ <- parseToken (tokenTypeIs RIGHT_PAREN)
+
+        pure args
+
+    -- parseArgs =
+    --   many $
+    --     do
+    --       e <- parseExpr
+    --       _ <- many parseLineEnd
+    --       pure e
+
+    optionalArg =
+      (do e <- parseExpr; pure (Just e))
+      <|> pure Nothing
+
+    parseArgs =
+      do
+        first <- optionalArg
+        case first of
+          Nothing => pure []
+          Just x =>
+            do
+              xs <- many (do _ <- parseToken (tokenTypeIs COMMA); parseExpr)
+              pure (x :: xs)
 
 -- parseUnary = parseBasic parser
 --   where
@@ -298,6 +350,37 @@ parseEquality = parseBasic parser
 parseExpr =
   parseEquality
   -- (parserOverwriteError (\err => err ++ ["parseEquality in parseExpr failed"]) $ parseEquality )
+
+parseTokenAsPrimitiveType : (Token -> Bool) -> ExprType -> Parser (List Token) ExprType
+parseTokenAsPrimitiveType predicate exprType =
+  do
+    tokens <- lift get
+    case tokens of
+      [] => left [ "No tokens found" ]
+      (t::tt) =>
+          if predicate t
+            then do
+              lift . put $ tt
+              pure exprType
+            else left [ "Token '" ++ show t ++ "' does not fit predicate" ]
+
+  -- show TypeUnknown = "TypeUnknown"
+  -- show TypeNil     = "TypeNil"
+  -- show TypeBool    = "TypeBool"
+  -- show TypeInt     = "TypeInt"
+  -- show TypeReal    = "TypeReal"
+  -- show TypeString  = "TypeString"
+  -- show (TypeFunc arguments result) = show arguments ++ " -> " ++ show result
+  -- -- show (TypeTable tbl)   = "TypeTable {" ++ show tbl ++ "}"
+  -- show (TypeTable tbl)   = "TypeTable " ++ show tbl
+-- Only able to process primitive types for now, not tables or functions or anything else.
+parseExprType : Parser (List Token) ExprType
+parseExprType =
+      parseTokenAsPrimitiveType (isTokenType NILT   ) TypeNil
+  <|> parseTokenAsPrimitiveType (isTokenType BOOL   ) TypeBool
+  <|> parseTokenAsPrimitiveType (isTokenType INT    ) TypeInt
+  <|> parseTokenAsPrimitiveType (isTokenType REAL   ) TypeReal
+  <|> parseTokenAsPrimitiveType (isTokenType STRINGT) TypeString
 
 -- Idk what to do with this shit
 dummyToken : TokenType -> Token
