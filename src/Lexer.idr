@@ -47,7 +47,7 @@ data TokenType =
 
   -- Keywords
   IF | ELSE | WHILE | FOR | IN |
-  FN | RETURN | PRINT |
+  FN | RETURN | -- PRINT |
   AND | OR |
   LET | CONST |
   NILT | BOOL | INT | REAL | STRINGT | -- Types
@@ -96,7 +96,7 @@ Eq TokenType where
   (==) IN IN = True
   (==) FN FN = True
   (==) RETURN RETURN = True
-  (==) PRINT PRINT = True
+  -- (==) PRINT PRINT = True
   (==) AND AND = True
   (==) OR OR = True
   (==) LET LET = True
@@ -156,7 +156,7 @@ Show TokenType where
   show IN = "IN"
   show FN = "FN"
   show RETURN = "RETURN"
-  show PRINT = "PRINT"
+  -- show PRINT = "PRINT"
   show AND = "AND"
   show OR = "OR"
   show LET = "LET"
@@ -410,7 +410,7 @@ parseKeywordTokens = parseBasic parser
       <|> parseKeyword IN      "in"
       <|> parseKeyword FN      "fn"
       <|> parseKeyword RETURN  "return"
-      <|> parseKeyword PRINT   "print"
+      -- <|> parseKeyword PRINT   "print"
       <|> parseKeyword AND     "and"
       <|> parseKeyword OR      "or"
       <|> parseKeyword LET     "let"

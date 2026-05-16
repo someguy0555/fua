@@ -56,11 +56,28 @@ data ExprType : Type where
   TypeTable   : (SortedMap Identifier ExprType) -> ExprType -- Mapping strings to types.
 
 data Expr : Type where
-  ExprUnassigned : ExprType -> Expr
-  ExprOperand    : ExprType -> a -> Expr
+  -- ExprUnassigned : ExprType -> Expr
+  ExprOperand    : Show a => ExprType -> a -> Expr
   ExprVariable   : ExprType -> Identifier -> Expr
   ExprOperator   : ExprType -> Operator n -> Vect n Expr -> Expr
   ExprCall       : Expr -> List Expr -> Expr
+
+Show (Operator n) where
+  show Neg          = "Neg"
+  show Not          = "Not"
+  show Add          = "Add"
+  show Sub          = "Sub"
+  show Mul          = "Mul"
+  show Div          = "Div"
+  show Mod          = "Mod"
+  show And          = "And"
+  show Or           = "Or"
+  show Greater      = "Greater"
+  show Less         = "Less"
+  show GreaterEqual = "GreaterEqual"
+  show LessEqual    = "LessEqual"
+  show Equal        = "Equal"
+  show NotEqual     = "NotEqual"
 
 -- Your mother is not total.
 covering
@@ -76,13 +93,39 @@ Show ExprType where
   show (TypeTable tbl)   = "TypeTable " ++ show tbl
   -- show (TypeTable tbl)   = "TypeTable { ... }"
 
-Show (Operator n) where
-  show _ = "Operator"
+covering
+Show Expr where
+  -- show (ExprUnassigned ty) =
+  --   "Unassigned : " ++ show ty
 
-failing
-  Show Expr where
-    show (ExprOperand type a) = "..operand value.." ++ " : " ++ show type
-    show (ExprOperator type op exprs) = show op ++ show exprs ++ " : " ++ show type
+  show (ExprOperand ty val) =
+    "Operand(" ++ show val ++ ") : " ++ show ty
+
+  show (ExprVariable ty name) =
+    "Variable(" ++ name ++ ") : " ++ show ty
+
+  show (ExprOperator ty op exprs) =
+    "Operator("
+      ++ show op
+      ++ ", "
+      ++ show exprs
+      ++ ") : "
+      ++ show ty
+
+  show (ExprCall fn args) =
+    "Call("
+      ++ show fn
+      ++ ", "
+      ++ show args
+      ++ ")"
+
+-- Show (Operator n) where
+--   show _ = "Operator"
+
+-- failing
+--   Show Expr where
+--     show (ExprOperand type a) = "..operand value.." ++ " : " ++ show type
+--     show (ExprOperator type op exprs) = show op ++ show exprs ++ " : " ++ show type
 
 expr0 : Expr
 expr0 = ExprOperator TypeUnknown Add [ExprOperand TypeUnknown 2, ExprOperand TypeUnknown 2]
@@ -110,6 +153,42 @@ parseOperatorUsingTokenType op tt =
     -- (\err => ["Failed to parse operator using token type '" ++ show tt ++ "'"])
     $
     parseOperator op (isTokenType tt)
+
+parseLeftAssoc : Parser (List Token) Expr -> Parser (List Token) (Operator 2) -> Parser (List Token) Expr
+parseLeftAssoc lowerParser opParser =
+  do
+    first <- lowerParser
+    continue first
+
+  where
+    continue : Expr -> Parser (List Token) Expr
+    parser   : Parser (List Token) (Operator 2, Expr)
+
+    continue leftExpr =
+      do
+        state <- lift get
+
+        case parse parser state of
+          (_, Left _) =>
+            pure leftExpr
+
+          (state', Right (op, rightExpr)) =>
+            do
+              lift $ put state'
+
+              let combined =
+                    ExprOperator
+                      TypeUnknown
+                      op
+                      [leftExpr, rightExpr]
+
+              continue combined
+
+    parser =
+      do
+        op <- opParser
+        rhs <- lowerParser
+        pure (op, rhs)
 
 parsePrimary         : Parser (List Token) Expr
 parsePrimaryWithCall : Parser (List Token) Expr
@@ -243,6 +322,7 @@ parseUnary = parseBasic parser
     opParser =
           parseOperatorUsingTokenType Not BANG
       <|> parseOperatorUsingTokenType Neg MINUS
+
     parser =
       (
         do
@@ -252,100 +332,138 @@ parseUnary = parseBasic parser
           pure $ ExprOperator TypeUnknown op [e]
       )
       <|>
-      parsePrimary
+      parsePrimaryWithCall
 
-parseFactor = parseBasic parser
+-- Left-associative
+parseFactor =
+  parseLeftAssoc parseUnary opParser
   where
-    opParser   =
+    opParser =
           parseOperatorUsingTokenType Mul STAR
       <|> parseOperatorUsingTokenType Div SLASH
       <|> parseOperatorUsingTokenType Mod PERCENT
-    parser =
-      (
-        do
-          state <- lift get
-          pre  <- tryParse state $ parseUnary
-          op   <- tryParse state $ opParser
-          post <- tryParse state $ parseFactor
-          pure $ ExprOperator TypeUnknown op [pre, post]
-      )
-      <|>
-      parseUnary
-      -- (parserOverwriteError (\err => err ++ ["parseUnary in parseFactor failed"]) $ parseUnary )
+-- parseFactor = parseBasic parser
+--   where
+--     opParser   =
+--           parseOperatorUsingTokenType Mul STAR
+--       <|> parseOperatorUsingTokenType Div SLASH
+--       <|> parseOperatorUsingTokenType Mod PERCENT
+--     parser =
+--       (
+--         do
+--           state <- lift get
+--           pre  <- tryParse state $ parseUnary
+--           op   <- tryParse state $ opParser
+--           post <- tryParse state $ parseFactor
+--           pure $ ExprOperator TypeUnknown op [pre, post]
+--       )
+--       <|>
+--       parseUnary
+--       -- (parserOverwriteError (\err => err ++ ["parseUnary in parseFactor failed"]) $ parseUnary )
 
-parseTerm = parseBasic parser
+-- Left-associative
+parseTerm =
+  parseLeftAssoc parseFactor opParser
   where
     opParser =
           parseOperatorUsingTokenType Add PLUS
       <|> parseOperatorUsingTokenType Sub MINUS
+-- parseTerm = parseBasic parser
+--   where
+--     opParser =
+--           parseOperatorUsingTokenType Add PLUS
+--       <|> parseOperatorUsingTokenType Sub MINUS
+--
+--     parser =
+--       (
+--         do
+--           state <- lift get
+--           pre  <- tryParse state $ parseFactor
+--           op   <- tryParse state $ opParser
+--           post <- tryParse state $ parseTerm
+--           pure $ ExprOperator TypeUnknown op [pre, post]
+--       )
+--       <|> parseFactor
+--       -- <|> (parserOverwriteError (\err => err ++ ["parseFactor in parseTerm failed"]) $ parseFactor )
 
-    parser =
-      (
-        do
-          state <- lift get
-          pre  <- tryParse state $ parseFactor
-          op   <- tryParse state $ opParser
-          post <- tryParse state $ parseTerm
-          pure $ ExprOperator TypeUnknown op [pre, post]
-      )
-      <|> parseFactor
-      -- <|> (parserOverwriteError (\err => err ++ ["parseFactor in parseTerm failed"]) $ parseFactor )
-
-parseLogical = parseBasic parser
+-- Left-associative
+parseLogical =
+  parseLeftAssoc parseTerm opParser
   where
     opParser =
           parseOperatorUsingTokenType And AND
-      <|> parseOperatorUsingTokenType Or  OR
+      <|> parseOperatorUsingTokenType Or OR
+-- parseLogical = parseBasic parser
+--   where
+--     opParser =
+--           parseOperatorUsingTokenType And AND
+--       <|> parseOperatorUsingTokenType Or  OR
+--
+--     parser =
+--       (
+--         do
+--           state <- lift get
+--           pre  <- tryParse state $ parseTerm
+--           op   <- tryParse state $ opParser
+--           post <- tryParse state $ parseLogical
+--           pure $ ExprOperator TypeUnknown op [pre, post]
+--       )
+--       <|>
+--       parseTerm
 
-    parser =
-      (
-        do
-          state <- lift get
-          pre  <- tryParse state $ parseTerm
-          op   <- tryParse state $ opParser
-          post <- tryParse state $ parseLogical
-          pure $ ExprOperator TypeUnknown op [pre, post]
-      )
-      <|>
-      parseTerm
-
-parseComparison = parseBasic parser
+-- Left-associative
+parseComparison =
+  parseLeftAssoc parseLogical opParser
   where
     opParser =
-          parseOperatorUsingTokenType Greater      GREATER
+          parseOperatorUsingTokenType Greater GREATER
       <|> parseOperatorUsingTokenType GreaterEqual GREATER_EQUAL
-      <|> parseOperatorUsingTokenType Less         LESS
-      <|> parseOperatorUsingTokenType LessEqual    LESS_EQUAL
+      <|> parseOperatorUsingTokenType Less LESS
+      <|> parseOperatorUsingTokenType LessEqual LESS_EQUAL
+-- parseComparison = parseBasic parser
+--   where
+--     opParser =
+--           parseOperatorUsingTokenType Greater      GREATER
+--       <|> parseOperatorUsingTokenType GreaterEqual GREATER_EQUAL
+--       <|> parseOperatorUsingTokenType Less         LESS
+--       <|> parseOperatorUsingTokenType LessEqual    LESS_EQUAL
+--
+--     parser =
+--       (
+--         do
+--           state <- lift get
+--           pre  <- tryParse state $ parseLogical
+--           op   <- tryParse state $ opParser
+--           post <- tryParse state $ parseComparison
+--           pure $ ExprOperator TypeUnknown op [pre, post]
+--       )
+--       <|>
+--       parseLogical
 
-    parser =
-      (
-        do
-          state <- lift get
-          pre  <- tryParse state $ parseLogical
-          op   <- tryParse state $ opParser
-          post <- tryParse state $ parseComparison
-          pure $ ExprOperator TypeUnknown op [pre, post]
-      )
-      <|>
-      parseLogical
-
-parseEquality = parseBasic parser
+-- Left-associative
+parseEquality =
+  parseLeftAssoc parseComparison opParser
   where
     opParser =
-          parseOperatorUsingTokenType Equal    EQUAL_EQUAL
+          parseOperatorUsingTokenType Equal EQUAL_EQUAL
       <|> parseOperatorUsingTokenType NotEqual BANG_EQUAL
-
-    parser =
-      (
-        do
-          state <- lift get
-          pre  <- tryParse state $ parseComparison
-          op   <- tryParse state $ opParser
-          post <- tryParse state $ parseEquality
-          pure $ ExprOperator TypeUnknown op [pre, post]
-      )
-      <|>
-      parseComparison
+-- parseEquality = parseBasic parser
+--   where
+--     opParser =
+--           parseOperatorUsingTokenType Equal    EQUAL_EQUAL
+--       <|> parseOperatorUsingTokenType NotEqual BANG_EQUAL
+--
+--     parser =
+--       (
+--         do
+--           state <- lift get
+--           pre  <- tryParse state $ parseComparison
+--           op   <- tryParse state $ opParser
+--           post <- tryParse state $ parseEquality
+--           pure $ ExprOperator TypeUnknown op [pre, post]
+--       )
+--       <|>
+--       parseComparison
 
 parseExpr =
   parseEquality

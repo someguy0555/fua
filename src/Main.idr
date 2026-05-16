@@ -1,6 +1,8 @@
 module Main
 
 import Data.List
+import Data.SortedMap
+import Data.List
 import Data.String
 import Control.Monad.State
 import Data.Either
@@ -13,22 +15,142 @@ import Parser
 import Lexer
 import Expr
 import Stmt
+import Resolved
+
+parseCode : String -> Either ErrorMsg Stmt
+parseCode src =
+  case parseText lexer src of
+    (_, Left lexErr) =>
+      Left lexErr
+
+    (_, Right toks) =>
+      case parse parseProgram toks of
+        (_, Left parseErr) =>
+          Left parseErr
+
+        (_, Right ast) =>
+          Right ast
+
+parseAndResolveCode : String -> Either ErrorMsg (Env, ResolvedStmt)
+parseAndResolveCode src =
+  case parseCode src of
+    Right stmt => resolveStmt (MkEnv Nothing 0 empty) stmt
+    Left e => Left e
 
 code00 = """
-fn main() {
-    print "Hello"
-}
-fn add(a, b) { return a + b }
+let x = 10
+let y = 20
+x = x + y
 """
 
--- let i = 0
 code01 = """
-while i < 100 {
-  i = i + 1 
+if true {
+  let x : Int = 100
 }
-i = 10
-while i == 10 { if i == 10 { break } }
 """
+
+code02 = """
+while i < 10 {
+  i = i + 1
+}
+"""
+
+code03 = """
+fn add(a : Int, b : Int) : Int {
+  return a + b
+}
+"""
+
+{-
+Left
+[
+  "Unexpected tokens at end of program:
+  [
+    { token = FN, line = 0, column = 0},
+    { token = IDENTIFIER \"hello\", line = 0, column = 3},
+    { token = LEFT_PAREN, line = 0, column = 8},
+    { token = IDENTIFIER \"name\", line = 0, column = 9},
+    { token = RIGHT_PAREN, line = 0, column = 13},
+    { token = LEFT_BRACE, line = 0, column = 15},
+    { token = NEWLINE, line = 0, column = 16},
+    { token = PRINT, line = 1, column = 2},
+    { token = LEFT_PAREN, line = 1, column = 7},
+    { token = IDENTIFIER \"name\", line = 1, column = 8},
+    { token = RIGHT_PAREN, line = 1, column = 12},
+    { token = NEWLINE, line = 1, column = 13},
+    { token = RIGHT_BRACE, line = 2, column = 0}
+  ]"
+]
+-}
+code04 = """
+fn hello(name) {
+  print(name)
+}
+"""
+
+code05 = """
+fn factorial(n : Int) : Int {
+  if n == 0 {
+    return 1
+  }
+
+  return n * factorial(n - 1)
+}
+"""
+
+code06 = """
+{
+  let x = 10
+
+  {
+    let y = 20
+    x = x + y
+  }
+}
+"""
+
+code07 = """
+fn loop() {
+  while true {
+    break
+  }
+}
+"""
+
+code08 = """
+fn math(a, b, c : Int) : Int {
+  let result = a * b + c
+  return result
+}
+"""
+
+code09 = """
+fn add(a, b) { return a + b }
+fn print(a) { return }
+
+fn main() {
+  let x : Int = 10
+  let y : Int = 20
+
+  if x < y {
+    print(add(x, y))
+  }
+}
+"""
+
+codeLs : List String
+codeLs = [
+    code00,
+    code01,
+    code02,
+    code03,
+    code04,
+    code05,
+    code06,
+    code07,
+    code08,
+    code09
+  ]
 
 tokens01 : List Token
 tokens01 = [
@@ -65,6 +187,16 @@ tokens01 = [
     MkToken RIGHT_BRACE 4 37
   ]
 
+test00 = parseCode code00
+test01 = parseCode code01
+test02 = parseCode code02
+test03 = parseCode code03
+test04 = parseCode code04
+test05 = parseCode code05
+test06 = parseCode code06
+test07 = parseCode code07
+test08 = parseCode code08
+test09 = parseCode code09
 
 -- stmts01 : List Stmt
 -- stmts01 = [

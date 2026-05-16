@@ -11,6 +11,9 @@ import Control.Monad.Error.Either
 import Parser
 import Lexer
 
+isLineEnd : TokenType -> Bool
+isLineEnd tt = tt == NEWLINE || tt == SEMICOLON
+
 tokenTypeIs : TokenType -> Token -> Bool
 tokenTypeIs tt (MkToken tok _ _) = tt == tok
 
