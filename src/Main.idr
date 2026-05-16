@@ -133,7 +133,7 @@ fn main() {
   let y : Int = 20
 
   if x < y {
-    print(add(x, y))
+    print(add(x))
   }
 }
 """
