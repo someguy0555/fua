@@ -16,6 +16,7 @@ import Lexer
 import Expr
 import Stmt
 import Resolved
+import TypeChecking
 
 parseCode : String -> Either ErrorMsg Stmt
 parseCode src =
@@ -31,22 +32,43 @@ parseCode src =
         (_, Right ast) =>
           Right ast
 
+-- typeCheckStmt : Env -> ExprType -> ResolvedStmt -> Either ErrorMsg ()
 parseAndResolveCode : String -> Either ErrorMsg (Env, ResolvedStmt)
 parseAndResolveCode src =
   case parseCode src of
     Right stmt => resolveStmt (MkEnv Nothing 0 empty) stmt
     Left e => Left e
 
-processProgram : String -> Either ErrorMsg ()
-processProgram src =
-  do
-    (env, resolved) <- parseAndResolveCode src
-    let cs = collectStmt env resolved []
-    solve cs
+typeCheckProgram : ResolvedStmt -> Either ErrorMsg ()
+typeCheckProgram (RBlock env stmts) =
+  traverse_ (typeCheckStmt env TypeNil) stmts
+
+typeCheckProgram stmt =
+  typeCheckStmt emptyEnv TypeNil stmt
+
+parseResolveTypecheck : String -> IO ()
+parseResolveTypecheck code = 
+  case parseAndResolveCode code of
+    Left err =>
+      printLn err
+
+    Right (_, resolved) =>
+      case typeCheckProgram resolved of
+        Left err =>
+          printLn ("Type error: " ++ show err)
+        Right _ =>
+          printLn "Program is valid"
+
+-- processProgram : String -> Either ErrorMsg ()
+-- processProgram src =
+--   do
+--     (env, resolved) <- parseAndResolveCode src
+--     let cs = collectStmt env resolved []
+--     solve cs
 
 code00 = """
-let x = 10
-let y = 20
+let x : Int = 10
+let y : String = 20
 x = x + y
 """
 

@@ -30,7 +30,7 @@ data Stmt : Type where
   StmtReturn : Maybe Expr -> Stmt
   StmtBreak  : Stmt
   StmtAssign : Identifier -> Expr -> Stmt
-  StmtLet    : IdentifierAndType -> Maybe Expr -> Stmt
+  StmtLet    : IdentifierAndType -> Expr -> Stmt
   StmtFunc   : IdentifierAndType -> List IdentifierAndType -> Stmt -> Stmt
 
 failing
@@ -169,44 +169,33 @@ parseAssignStmt =
 parseLetStmt =
   do
     _ <- parseToken (tokenTypeIs LET)
+
     tok <- parseToken isIdentifier
+
     case tok of
-      MkToken (IDENTIFIER name) _ _ => do
-        _ <- many parseLineEnd
-        parsedType <- many $ do
+      MkToken (IDENTIFIER name) _ _ =>
+        do
+          _ <- many parseLineEnd
+
           _ <- parseToken (tokenTypeIs COLON)
           _ <- many parseLineEnd
-          parseExprType
-        realType <-
-          case parsedType of
-               []      => pure TypeUnknown
-               [x]     => pure x
-               _       => left ["Attempting to define type multiple times"]
-              -- _        => left [ "Attempting to define type of declaration multiple times." ]
-        parsedValue <- do
-          _ <- many parseLineEnd
-          many parseRightHandSide
-        realValue <-
-          case parsedValue of
-               []      => pure (Nothing)
-               [x]     => pure (Just x)
-               _       => left ["Attempting to assign multiple values"]
-        pure (StmtLet (name, realType) realValue)
-      _ => left ["Failed to parse identifier"]
 
-parseReturnStmt =
-  do
-    _ <- parseToken (tokenTypeIs RETURN)
+          realType <- parseExprType
 
-    exprs <- many parseExpr
+          parsedValue <-
+            do
+              _ <- many parseLineEnd
+              many parseRightHandSide
 
-    case exprs of
-         []    => pure (StmtReturn Nothing)
-         [x]   => pure (StmtReturn (Just x))
-         _     => left ["Invalid return statement"]
+          realValue <-
+            case parsedValue of
+              [x] => pure x
+              _   => left ["Attempting to assign multiple values"]
 
-mkFuncType : List ExprType -> ExprType -> ExprType
-mkFuncType args ret = TypeFunc args ret
+          pure (StmtLet (name, realType) realValue)
+
+      _ =>
+        left ["Failed to parse identifier"]
 
 parseFuncStmt =
   do
@@ -224,13 +213,13 @@ parseFuncStmt =
     _ <- many parseLineEnd
     _ <- parseToken (tokenTypeIs RIGHT_PAREN)
 
-    retType <- parseOptionalReturnType
+    retType <- parseReturnType
 
     _ <- many parseLineEnd
 
     body <- parseBlock
 
-    let paramTypes = map snd ( trace ( show params ) params )
+    let paramTypes = map snd params
     let funcType = TypeFunc paramTypes retType
 
     pure $
@@ -246,25 +235,13 @@ parseFuncStmt =
         MkToken (IDENTIFIER n) _ _ => pure n
         _ => left ["Expected function name"]
 
-    parseOptionalType : Parser (List Token) ExprType
-    parseOptionalType =
+    parseRequiredType : Parser (List Token) ExprType
+    parseRequiredType =
       do
-        state <- lift get
-        case parse parser state of
-          (_, Left _) =>
-            pure TypeUnknown
-
-          (state', Right ty) =>
-            do
-              lift $ put state'
-              pure ty
-      where
-        parser =
-          do
-            _ <- many parseLineEnd
-            _ <- parseToken (tokenTypeIs COLON)
-            _ <- many parseLineEnd
-            parseExprType
+        _ <- many parseLineEnd
+        _ <- parseToken (tokenTypeIs COLON)
+        _ <- many parseLineEnd
+        parseExprType
 
     parseParam : Parser (List Token) IdentifierAndType
     parseParam =
@@ -276,7 +253,8 @@ parseFuncStmt =
             MkToken (IDENTIFIER n) _ _ => pure n
             _ => left ["Expected parameter name"]
 
-        ty <- parseOptionalType
+        ty <- parseRequiredType
+
         pure (name, ty)
 
     optionalParam : Parser (List Token) (Maybe IdentifierAndType)
@@ -291,6 +269,7 @@ parseFuncStmt =
 
         case first of
           Nothing => pure []
+
           Just x =>
             do
               xs <- many $
@@ -299,11 +278,123 @@ parseFuncStmt =
                   _ <- parseToken (tokenTypeIs COMMA)
                   _ <- many parseLineEnd
                   parseParam
+
               pure (x :: xs)
 
-    parseOptionalReturnType : Parser (List Token) ExprType
-    parseOptionalReturnType =
-      parseOptionalType
+    parseReturnType : Parser (List Token) ExprType
+    parseReturnType =
+      parseRequiredType
+
+parseReturnStmt =
+  do
+    _ <- parseToken (tokenTypeIs RETURN)
+
+    exprs <- many parseExpr
+
+    case exprs of
+         []    => pure (StmtReturn Nothing)
+         [x]   => pure (StmtReturn (Just x))
+         _     => left ["Invalid return statement"]
+
+mkFuncType : List ExprType -> ExprType -> ExprType
+mkFuncType args ret = TypeFunc args ret
+
+-- parseFuncStmt =
+--   do
+--     _ <- parseToken (tokenTypeIs FN)
+--
+--     nameTok <- parseToken isIdentifier
+--     name <- extractName nameTok
+--
+--     _ <- many parseLineEnd
+--     _ <- parseToken (tokenTypeIs LEFT_PAREN)
+--     _ <- many parseLineEnd
+--
+--     params <- parseParams
+--
+--     _ <- many parseLineEnd
+--     _ <- parseToken (tokenTypeIs RIGHT_PAREN)
+--
+--     retType <- parseOptionalReturnType
+--
+--     _ <- many parseLineEnd
+--
+--     body <- parseBlock
+--
+--     let paramTypes = map snd ( trace ( show params ) params )
+--     let funcType = TypeFunc paramTypes retType
+--
+--     pure $
+--       StmtFunc
+--         (name, funcType)
+--         params
+--         body
+--
+--   where
+--     extractName : Token -> Parser (List Token) Identifier
+--     extractName tok =
+--       case tok of
+--         MkToken (IDENTIFIER n) _ _ => pure n
+--         _ => left ["Expected function name"]
+--
+--     parseOptionalType : Parser (List Token) ExprType
+--     parseOptionalType =
+--       do
+--         state <- lift get
+--         case parse parser state of
+--           (_, Left _) =>
+--             pure TypeUnknown
+--
+--           (state', Right ty) =>
+--             do
+--               lift $ put state'
+--               pure ty
+--       where
+--         parser =
+--           do
+--             _ <- many parseLineEnd
+--             _ <- parseToken (tokenTypeIs COLON)
+--             _ <- many parseLineEnd
+--             parseExprType
+--
+--     parseParam : Parser (List Token) IdentifierAndType
+--     parseParam =
+--       do
+--         tok <- parseToken isIdentifier
+--
+--         name <-
+--           case tok of
+--             MkToken (IDENTIFIER n) _ _ => pure n
+--             _ => left ["Expected parameter name"]
+--
+--         ty <- parseOptionalType
+--         pure (name, ty)
+--
+--     optionalParam : Parser (List Token) (Maybe IdentifierAndType)
+--     optionalParam =
+--           (do p <- parseParam; pure (Just p))
+--       <|> pure Nothing
+--
+--     parseParams : Parser (List Token) (List IdentifierAndType)
+--     parseParams =
+--       do
+--         first <- optionalParam
+--
+--         case first of
+--           Nothing => pure []
+--           Just x =>
+--             do
+--               xs <- many $
+--                 do
+--                   _ <- many parseLineEnd
+--                   _ <- parseToken (tokenTypeIs COMMA)
+--                   _ <- many parseLineEnd
+--                   parseParam
+--               pure (x :: xs)
+--
+--     parseOptionalReturnType : Parser (List Token) ExprType
+--     parseOptionalReturnType =
+--       parseOptionalType
 -- parseFuncStmt =
 --   do
 --     _ <- parseToken (tokenTypeIs FN)
