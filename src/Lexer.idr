@@ -451,33 +451,3 @@ lexer = many lexer'
         _ <- parseWhiteSpace
         tok <- lexToken
         pure tok
-
--- lexer : (LexerState, List Token) -> (LexerState, List Token, ErrorMsg)
--- lexer (state, ls) =
---   case parse parser state of
---     (state', Right rh) => lexer (state', (rh::ls))
---     (state', Left err') => (state', reverse ls, err')
---   where
---     parser' : Parser LexerState Token
---     parser' = -- parserOverwriteError (\err => "Unable to parse txt") $
---           parseNewLine
---       <|> parseKeywordTokens
---       <|> parseMultipleCharacterTokens
---       <|> parseSingleCharacterTokens
---       <|> parseIdentifier
---       <|> parseStringLiteral
---       <|> parseIntegerLiteral
---       <|> parseRealNumberLiteral
---     parser : Parser LexerState Token
---     parser = 
---       do
---         state <- lift get
---         case (parse parseWhiteSpace) state of
---           (_, Left _) => left [ "Unknown error" ]
---           (state', Right rh) => do
---             lift . put $ state'
---             case (parse parser') state' of
---               (_, Left err) => left err
---               (state', Right rh) => do
---                 lift . put $ state'
---                 pure rh

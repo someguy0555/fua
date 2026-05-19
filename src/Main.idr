@@ -37,6 +37,13 @@ parseAndResolveCode src =
     Right stmt => resolveStmt (MkEnv Nothing 0 empty) stmt
     Left e => Left e
 
+processProgram : String -> Either ErrorMsg ()
+processProgram src =
+  do
+    (env, resolved) <- parseAndResolveCode src
+    let cs = collectStmt env resolved []
+    solve cs
+
 code00 = """
 let x = 10
 let y = 20
@@ -136,6 +143,13 @@ fn main() {
     print(add(x))
   }
 }
+"""
+
+code10 = """
+let a = 2
+let b : Bool = True
+
+return a + b
 """
 
 codeLs : List String

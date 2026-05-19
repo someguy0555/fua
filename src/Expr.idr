@@ -93,6 +93,23 @@ Show ExprType where
   show (TypeTable tbl)   = "TypeTable " ++ show tbl
   -- show (TypeTable tbl)   = "TypeTable { ... }"
 
+covering -- Why is it not terminating??? I hate this language so much.
+Eq ExprType where
+  TypeUnknown == TypeUnknown = True
+  TypeNil     == TypeNil     = True
+  TypeBool    == TypeBool    = True
+  TypeInt     == TypeInt     = True
+  TypeReal    == TypeReal    = True
+  TypeString  == TypeString  = True
+
+  TypeFunc as r == TypeFunc as' r' =
+    as == as' && r == r'
+
+  -- TypeTable t == TypeTable t' =
+  --   t == t'
+
+  _ == _ = False
+
 covering
 Show Expr where
   -- show (ExprUnassigned ty) =
