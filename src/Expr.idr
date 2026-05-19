@@ -56,11 +56,19 @@ data ExprType : Type where
   TypeTable   : (SortedMap Identifier ExprType) -> ExprType -- Mapping strings to types.
 
 data Expr : Type where
-  -- ExprUnassigned : ExprType -> Expr
-  ExprOperand    : Show a => ExprType -> a -> Expr
+  -- ExprOperand    : Show a => ExprType -> a -> Expr
   ExprVariable   : ExprType -> Identifier -> Expr
   ExprOperator   : ExprType -> Operator n -> Vect n Expr -> Expr
   ExprCall       : Expr -> List Expr -> Expr
+
+exprTypeToRealType : ExprType -> Type
+exprTypeToRealType TypeUnknown = ()
+exprTypeToRealType TypeNil     = ()
+exprTypeToRealType TypeBool    = Bool
+exprTypeToRealType TypeInt     = Integer
+exprTypeToRealType TypeReal    = RealNumber
+exprTypeToRealType TypeString  = String
+exprTypeToRealType _ = ()
 
 Show (Operator n) where
   show Neg          = "Neg"

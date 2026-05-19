@@ -17,6 +17,7 @@ import Expr
 import Stmt
 import Resolved
 import TypeChecking
+import Interpreter
 
 parseCode : String -> Either ErrorMsg Stmt
 parseCode src =
@@ -58,6 +59,12 @@ parseResolveTypecheck code =
           printLn ("Type error: " ++ show err)
         Right _ =>
           printLn "Program is valid"
+
+execProgram : FunctionTable -> ResolvedStmt -> Value
+execProgram ft stmt =
+  case execStmt emptyEnv ft stmt of
+    Normal _     => VUnit
+    Return v _   => v
 
 -- processProgram : String -> Either ErrorMsg ()
 -- processProgram src =
@@ -172,6 +179,58 @@ let a = 2
 let b : Bool = True
 
 return a + b
+"""
+
+code11 = """
+fn add(a: Int, b: Int) : Int {
+  return a + b
+}
+
+fn badAdd(a: Int, b: Int) : Int {
+  let x : Int = a + b
+  let y : Bool = (a + b == 10)
+
+  let z : Int = x + y
+
+  return z
+}
+"""
+
+hmm = """
+fn shadowTest(x: Int) : Int {
+  let x : Int = 10
+  let y : Int = x + 1
+  return y
+}
+
+fn callTest(a: Int) : Int {
+  let b : Int = add(a, 10)
+  let c : Int = add(b, add(a, 1))
+  return c
+}
+
+fn badCall(a: Int) : Int {
+  // wrong arity
+  return add(a)
+}
+
+fn compareTest(a: Int, b: Int) : Bool {
+  let x : Bool = a < b
+  let y : Bool = a == b
+  return x
+}
+
+fn controlFlowTest(a: Int) : Int {
+  if a < 10 {
+    return a
+  }
+
+  while a < 100 {
+    a = a + 1
+  }
+
+  return a
+}
 """
 
 codeLs : List String
