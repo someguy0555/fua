@@ -68,3 +68,53 @@ parseLineEnd =
       parseToken (tokenTypeIs SEMICOLON)
       )
     pure ()
+
+digitToInt : Char -> Maybe Int
+digitToInt '0' = Just 0
+digitToInt '1' = Just 1
+digitToInt '2' = Just 2
+digitToInt '3' = Just 3
+digitToInt '4' = Just 4
+digitToInt '5' = Just 5
+digitToInt '6' = Just 6
+digitToInt '7' = Just 7
+digitToInt '8' = Just 8
+digitToInt '9' = Just 9
+digitToInt _   = Nothing
+
+-- readInteger : String -> Maybe Integer
+-- readInteger str =
+--   let
+--     lsCh = unpack str
+--     mapped = sequence $ (digitToInt) <$> lsCh
+--     packInteger : Integer -> List Int -> Integer
+--     packInteger int [] = int
+--     packInteger int (x::xs) = packInteger ( int * 10 + (cast x) ) xs
+--   in
+--     case mapped of
+--       Nothing => Nothing
+--       Just lsInt => Just (packInteger 0 lsInt)
+
+readInteger : String -> Maybe Integer
+readInteger str =
+  let
+    lsCh = unpack str
+
+    (sign, digits) =
+      case lsCh of
+        ('-' :: xs) => (-1, xs)
+        ('+' :: xs) => (1, xs)
+        xs           => (1, xs)
+
+    mapped = sequence $ (digitToInt) <$> digits
+
+    packInteger : Integer -> List Int -> Integer
+    packInteger acc [] = acc
+    packInteger acc (x :: xs) =
+      packInteger (acc * 10 + cast x) xs
+
+  in
+    case mapped of
+      Nothing => Nothing
+      Just lsInt =>
+        Just (cast sign * packInteger 0 lsInt)

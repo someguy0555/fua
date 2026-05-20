@@ -31,7 +31,7 @@ record Env where
   vars   : SortedMap Identifier Sym
 
 emptyEnv : Env
-emptyEnv = MkEnv Nothing 0 empty
+emptyEnv = MkEnv Nothing 1 empty
 
 data ResolvedExpr : Type where
   RConst : Show a => ExprType -> a -> ResolvedExpr
@@ -150,6 +150,7 @@ Show Env where
 ------------------------------------------------------------
 
 lookupSym : Identifier -> Env -> Either ErrorMsg Sym
+lookupSym "print" env = Right (SymFunc [TypeString] TypeNil 0)
 lookupSym name env =
   case SortedMap.lookup name env.vars of
     Just sym => Right sym

@@ -62,9 +62,18 @@ parseResolveTypecheck code =
 
 execProgram : FunctionTable -> ResolvedStmt -> Value
 execProgram ft stmt =
-  case execStmt emptyEnv ft stmt of
+  case execStmt (MkRTEnv Nothing empty) ft stmt of
     Normal _     => VUnit
     Return v _   => v
+
+execProgram' : String -> Value
+execProgram' code = 
+  case parseAndResolveCode code of
+    Left err => VUnit
+    Right (_, resolved) =>
+      case typeCheckProgram resolved of
+        Left err => VUnit
+        Right _ => execProgram empty resolved
 
 -- processProgram : String -> Either ErrorMsg ()
 -- processProgram src =
@@ -77,6 +86,7 @@ code00 = """
 let x : Int = 10
 let y : String = 20
 x = x + y
+print(x)
 """
 
 code01 = """
