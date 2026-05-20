@@ -76,13 +76,3 @@ tryParse resetState parser =
       (state', Right rh) => do
         lift . put $ state'
         pure rh
-
--- orElse : Parser a b -> Parser a b -> Parser a b
--- orElse parserA parserB =
---   do
---     state <- lift get
---     case (parse parserA) state of
---          (state', Right rh) => do
---            lift . put $ state'
---            pure rh
---          (_, Left err) => left err
