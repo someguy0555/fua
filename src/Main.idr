@@ -49,35 +49,32 @@ parseProgram src =
           Left
             [ "Unconsumed tokens: " ++ show remaining ]
 
+runProgram : List Stmt -> IO ()
+runProgram stmts =
+  case checkProgram stmts of
+    Left err => printLn err
+    Right env =>
+      do
+        printLn "Env:"
+        print env
+        printLn "Program check successful"
+        final <- exec stmts env 0
+        pure ()
+
 execProgram : String -> IO ()
-execProgram src =
+execProgram src = do
   case parseText lexer src of
-    (_, Left err) =>
-      printLn err
+    (_, Left err) => printLn err
 
     (_, Right tokens) =>
       case parse parseStmtList tokens of
-        (_, Left perr) =>
-          printLn perr
+        (_, Left perr) => printLn perr
 
         (_, Right stmts) => do
-          print stmts
-          printLn ""
-          printLn "Output:"
-          runProgram stmts
-
-code00 = """
-a = 0
-b = 1
-repeat:
-if a > 100 goto fib
-c = a + b
-a = b
-b = c
-print c
-if 1 goto repeat
-fib:
-"""
+          printLn $ "Why does this not work? "
+          printLn $ show src
+          _ <- runProgram stmts
+          pure ()
 
 execFile : String -> IO ()
 execFile path =
@@ -85,20 +82,13 @@ execFile path =
     res <- readFile path
     case res of
       Left err =>
-        printLn ("File error: " ++ show err)
-
+        do
+          printLn ("File error: " ++ show err)
       Right content =>
-        case parseText lexer content of
-          (_, Left lexErr) =>
-            printLn ("Lexer error: " ++ show lexErr)
+        do
+          _ <- execProgram content
+          pure ()
 
-          (_, Right tokens) =>
-            case parse parseStmtList tokens of
-              (_, Left parseErr) =>
-                printLn ("Parser error: " ++ show parseErr)
-
-              (_, Right stmts) =>
-                runProgram stmts
 main : IO ()
 main =
   do
@@ -110,3 +100,17 @@ main =
 
       _ =>
         printLn "Usage: program <file>"
+
+code00 = """
+a = 0
+b = 1
+repeat:
+if b > 100 goto fib
+c = a + b
+a = b
+b = c
+print c
+if 1 goto repeat
+fib:
+"""
+

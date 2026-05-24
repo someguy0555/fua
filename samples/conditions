@@ -1,0 +1,9 @@
+counter = 0
+
+repeat:
+    to_print = counter
+    if to_print != 59 goto skip
+        to_print = to_print * 10
+    skip: 
+    print to_print
+if counter < 100 goto repeat

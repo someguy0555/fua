@@ -1,0 +1,10 @@
+a = 0
+b = 1
+repeat:
+    if a < 100 goto fib
+    c = a + b
+    a = b
+    b = c
+    print c
+if 1 goto repeat
+fib:

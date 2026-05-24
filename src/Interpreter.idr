@@ -308,18 +308,3 @@ exec code env pc = do
 --              else
 --                exec code env (pc + 1)
 
-------------------------------------------------------------
--- ENTRY POINT
-------------------------------------------------------------
-
-runProgram : List Stmt -> IO ()
-runProgram stmts =
-  case checkProgram stmts of
-    Left err => printLn err
-    Right env =>
-      do
-        printLn "Env:"
-        print env
-        printLn "Program check successful"
-        final <- exec stmts env 0
-        pure ()
