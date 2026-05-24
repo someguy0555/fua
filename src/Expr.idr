@@ -168,20 +168,21 @@ parsePrimary =
         _ <- parseToken (isTokenType RIGHT_PAREN)
         pure e
 
-parseUnary = parseBasic parser
+parseUnary =
+      parseUnaryOp
+  <|> parsePrimary
   where
+    opParser : Parser (List Token) (Operator 1)
     opParser =
           parseOperatorUsingTokenType Not BANG
       <|> parseOperatorUsingTokenType Neg MINUS
 
-    parser =
-      (
-        do
-          state <- lift get
-          op <- tryParse state $ opParser
-          e  <- tryParse state $ parseUnary
-          pure $ ExprOperator op [e]
-      )
+    parseUnaryOp : Parser (List Token) Expr
+    parseUnaryOp =
+      do
+        op <- opParser
+        e  <- parseUnary
+        pure $ ExprOperator op [e]
 
 -- Left-associative
 parseFactor =

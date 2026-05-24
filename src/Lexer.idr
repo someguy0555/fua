@@ -311,7 +311,7 @@ parseKeywordTokens = parseBasic parser
           parseKeyword IF      "if"
       <|> parseKeyword THEN    "then"
       <|> parseKeyword GOTO    "goto"
-      <|> parseKeyword GOTO    "print"
+      <|> parseKeyword PRINT   "print"
 
 lexToken : Parser LexerState Token
 lexToken = -- parserOverwriteError (\err => "Unable to parse txt") $

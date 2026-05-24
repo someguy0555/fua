@@ -16,510 +16,159 @@ import Lexer
 import Expr
 import Utility
 
-IdentifierAndType : Type
-IdentifierAndType  = (Identifier, ExprType)
--- data Expr : Type where
---   ExprOperand  : ExprType -> a -> Expr
---   ExprOperator : ExprType -> Operator n -> Vect n Expr -> Expr
+------------------------------------------------------------
+-- STATEMENTS
+------------------------------------------------------------
 
 data Stmt : Type where
-  StmtBlock  : List Stmt -> Stmt
-  StmtExpr   : Expr -> Stmt
-  StmtIf     : Expr -> Stmt -> Stmt
-  StmtWhile  : Expr -> Stmt -> Stmt
-  StmtReturn : Maybe Expr -> Stmt
-  StmtBreak  : Stmt
   StmtAssign : Identifier -> Expr -> Stmt
-  StmtLet    : IdentifierAndType -> Expr -> Stmt
-  StmtFunc   : IdentifierAndType -> List IdentifierAndType -> Stmt -> Stmt
+  StmtLabel  : Identifier -> Stmt
+  StmtIf     : Expr -> Identifier -> Stmt
+  StmtGoto   : Identifier -> Stmt
+  StmtPrint  : Expr -> Stmt
 
-failing
-  Show Stmt where
-    show (StmtBlock stmts) =
-      "{\n" ++ concatMap (\x => show x ++ "\n") stmts ++ "}"
+covering
+Show Stmt where
+  show (StmtAssign name expr) =
+    name ++ " = " ++ show expr
 
-    show (StmtExpr expr) =
-      -- "Expr(" ++ show expr ++ ")"
-      "Expr(" ++ show expr ++ ")"
+  show (StmtLabel name) =
+    name ++ ":"
 
-    show (StmtIf cond body) =
-      "If(" ++ show cond ++ ") " ++ show body
+  show (StmtIf expr label) =
+    "if " ++ show expr ++ " goto " ++ label
 
-    show (StmtWhile cond body) =
-      "While(" ++ show cond ++ ") " ++ show body
+  show (StmtGoto label) =
+    "goto " ++ label
 
-    show (StmtReturn Nothing) =
-      "Return"
+  show (StmtPrint expr) =
+    "print " ++ show expr
 
-    show (StmtReturn (Just expr)) =
-      "Return(" ++ show expr ++ ")"
+------------------------------------------------------------
+-- NEWLINES
+------------------------------------------------------------
 
-    show StmtBreak =
-      "Break"
-
-    show (StmtAssign name expr) =
-      "Assign(" ++ name ++ " = " ++ show expr ++ ")"
-
-    show (StmtLet (name, ty) Nothing) =
-      "Let(" ++ name ++ " : " ++ show ty ++ ")"
-
-    show (StmtLet (name, ty) (Just expr)) =
-      "Let(" ++ name ++ " : " ++ show ty ++ " = " ++ show expr ++ ")"
-
-    show (StmtFunc (name, retTy) params body) =
-      "Fn("
-        ++ name
-        ++ " : "
-        ++ show retTy
-        ++ ", params = "
-        ++ show params
-        ++ ") "
-        ++ show body
-
-parseStmt       : Parser (List Token) Stmt
-parseStmts      : Parser (List Token) (List Stmt)
-parseBlock      : Parser (List Token) Stmt
-parseExprStmt   : Parser (List Token) Stmt
-parseIfStmt     : Parser (List Token) Stmt
-parseReturnStmt : Parser (List Token) Stmt
-parseWhileStmt  : Parser (List Token) Stmt
-parseBreakStmt  : Parser (List Token) Stmt
-parseAssignStmt : Parser (List Token) Stmt
-parseLetStmt    : Parser (List Token) Stmt
-parseFuncStmt   : Parser (List Token) Stmt
-
-parseStmt =
-      parseIfStmt
-  <|> parseWhileStmt
-  <|> parseReturnStmt
-  <|> parseBreakStmt
-  <|> parseAssignStmt
-  <|> parseLetStmt
-  <|> parseFuncStmt
-  <|> parseExprStmt
-  <|> parseBlock
-
-parseStmts =
+skipNewlines : Parser (List Token) ()
+skipNewlines =
   do
-    uhh <- many (
-      do
-        stmt <- parseStmt
-        _    <- many parseLineEnd
-        pure stmt
-      )
-    pure uhh
+    _ <- many (parseToken (isTokenType NEWLINE))
+    pure ()
 
-parseBlock =
+------------------------------------------------------------
+-- LABEL
+------------------------------------------------------------
+
+parseLabel : Parser (List Token) Stmt
+parseLabel =
   do
-    _ <- parseToken (tokenTypeIs LEFT_BRACE)
-    _ <- many parseLineEnd
+    toks <- lift get
 
-    stmts <- parseStmts
-
-    _ <- many parseLineEnd
-    _ <- parseToken (tokenTypeIs RIGHT_BRACE)
-
-    pure (StmtBlock stmts)
-
-parseExprStmt =
-  do
-    expr <- parseExpr
-    pure $ StmtExpr expr
-
-parseIfStmt =
-  do
-    _ <- parseToken (tokenTypeIs IF)
-    _ <- many parseLineEnd
-    condition <- parseExpr
-    _ <- many parseLineEnd
-    body <- parseBlock
-    pure $ StmtIf condition body
-
-parseWhileStmt =
-  do
-    _ <- parseToken (tokenTypeIs WHILE)
-    _ <- many parseLineEnd
-    condition <- parseExpr
-    _ <- many parseLineEnd
-    body <- parseBlock
-    pure $ StmtWhile condition body
-
-parseBreakStmt =
-  do
-    _ <- parseToken (tokenTypeIs BREAK)
-    pure $ StmtBreak
-
-parseRightHandSide : Parser (List Token) Expr
-parseRightHandSide =
-  do
-    _ <- parseToken (tokenTypeIs EQUAL)
-    _ <- many parseLineEnd
-    parseExpr
-
-parseAssignStmt =
-  do
-    tok <- parseToken isIdentifier
-    case tok of
-      MkToken (IDENTIFIER name) _ _ => do
-        _ <- many parseLineEnd
-        value <- parseRightHandSide
-        pure (StmtAssign name value)
-      _ => left ["Failed to parse identifier"]
-
-parseLetStmt =
-  do
-    _ <- parseToken (tokenTypeIs LET)
-
-    tok <- parseToken isIdentifier
-
-    case tok of
-      MkToken (IDENTIFIER name) _ _ =>
+    case toks of
+      (MkToken (IDENTIFIER name) _ _) ::
+      (MkToken COLON _ _) :: rest =>
         do
-          _ <- many parseLineEnd
-
-          _ <- parseToken (tokenTypeIs COLON)
-          _ <- many parseLineEnd
-
-          realType <- parseExprType
-
-          parsedValue <-
-            do
-              _ <- many parseLineEnd
-              many parseRightHandSide
-
-          realValue <-
-            case parsedValue of
-              [x] => pure x
-              _   => left ["Attempting to assign multiple values"]
-
-          pure (StmtLet (name, realType) realValue)
+          lift $ put rest
+          pure (StmtLabel name)
 
       _ =>
-        left ["Failed to parse identifier"]
+        left ["Not a label"]
 
-parseFuncStmt =
+------------------------------------------------------------
+-- ASSIGNMENT
+------------------------------------------------------------
+
+parseAssign : Parser (List Token) Stmt
+parseAssign =
   do
-    _ <- parseToken (tokenTypeIs FN)
+    toks <- lift get
 
-    nameTok <- parseToken isIdentifier
-    name <- extractName nameTok
+    case toks of
+      (MkToken (IDENTIFIER name) _ _) ::
+      (MkToken EQUAL _ _) :: rest =>
+        do
+          lift $ put rest
+          expr <- parseExpr
+          pure (StmtAssign name expr)
 
-    _ <- many parseLineEnd
-    _ <- parseToken (tokenTypeIs LEFT_PAREN)
-    _ <- many parseLineEnd
+      _ =>
+        left ["Not an assignment"]
 
-    params <- parseParams
+------------------------------------------------------------
+-- IF GOTO
+------------------------------------------------------------
 
-    _ <- many parseLineEnd
-    _ <- parseToken (tokenTypeIs RIGHT_PAREN)
-
-    retType <- parseReturnType
-
-    _ <- many parseLineEnd
-
-    body <- parseBlock
-
-    let paramTypes = map snd params
-    let funcType = TypeFunc paramTypes retType
-
-    pure $
-      StmtFunc
-        (name, funcType)
-        params
-        body
-
-  where
-    extractName : Token -> Parser (List Token) Identifier
-    extractName tok =
-      case tok of
-        MkToken (IDENTIFIER n) _ _ => pure n
-        _ => left ["Expected function name"]
-
-    parseRequiredType : Parser (List Token) ExprType
-    parseRequiredType =
-      do
-        _ <- many parseLineEnd
-        _ <- parseToken (tokenTypeIs COLON)
-        _ <- many parseLineEnd
-        parseExprType
-
-    parseParam : Parser (List Token) IdentifierAndType
-    parseParam =
-      do
-        tok <- parseToken isIdentifier
-
-        name <-
-          case tok of
-            MkToken (IDENTIFIER n) _ _ => pure n
-            _ => left ["Expected parameter name"]
-
-        ty <- parseRequiredType
-
-        pure (name, ty)
-
-    optionalParam : Parser (List Token) (Maybe IdentifierAndType)
-    optionalParam =
-          (do p <- parseParam; pure (Just p))
-      <|> pure Nothing
-
-    parseParams : Parser (List Token) (List IdentifierAndType)
-    parseParams =
-      do
-        first <- optionalParam
-
-        case first of
-          Nothing => pure []
-
-          Just x =>
-            do
-              xs <- many $
-                do
-                  _ <- many parseLineEnd
-                  _ <- parseToken (tokenTypeIs COMMA)
-                  _ <- many parseLineEnd
-                  parseParam
-
-              pure (x :: xs)
-
-    parseReturnType : Parser (List Token) ExprType
-    parseReturnType =
-      parseRequiredType
-
-parseReturnStmt =
+parseIfGoto : Parser (List Token) Stmt
+parseIfGoto =
   do
-    _ <- parseToken (tokenTypeIs RETURN)
+    _ <- parseToken (isTokenType IF)
 
-    exprs <- many parseExpr
+    cond <- parseExpr
 
-    case exprs of
-         []    => pure (StmtReturn Nothing)
-         [x]   => pure (StmtReturn (Just x))
-         _     => left ["Invalid return statement"]
+    _ <- parseToken (isTokenType GOTO)
 
-mkFuncType : List ExprType -> ExprType -> ExprType
-mkFuncType args ret = TypeFunc args ret
+    MkToken tok _ _ <- parseToken isIdentifier
 
--- parseFuncStmt =
---   do
---     _ <- parseToken (tokenTypeIs FN)
---
---     nameTok <- parseToken isIdentifier
---     name <- extractName nameTok
---
---     _ <- many parseLineEnd
---     _ <- parseToken (tokenTypeIs LEFT_PAREN)
---     _ <- many parseLineEnd
---
---     params <- parseParams
---
---     _ <- many parseLineEnd
---     _ <- parseToken (tokenTypeIs RIGHT_PAREN)
---
---     retType <- parseOptionalReturnType
---
---     _ <- many parseLineEnd
---
---     body <- parseBlock
---
---     let paramTypes = map snd ( trace ( show params ) params )
---     let funcType = TypeFunc paramTypes retType
---
---     pure $
---       StmtFunc
---         (name, funcType)
---         params
---         body
---
---   where
---     extractName : Token -> Parser (List Token) Identifier
---     extractName tok =
---       case tok of
---         MkToken (IDENTIFIER n) _ _ => pure n
---         _ => left ["Expected function name"]
---
---     parseOptionalType : Parser (List Token) ExprType
---     parseOptionalType =
---       do
---         state <- lift get
---         case parse parser state of
---           (_, Left _) =>
---             pure TypeUnknown
---
---           (state', Right ty) =>
---             do
---               lift $ put state'
---               pure ty
---       where
---         parser =
---           do
---             _ <- many parseLineEnd
---             _ <- parseToken (tokenTypeIs COLON)
---             _ <- many parseLineEnd
---             parseExprType
---
---     parseParam : Parser (List Token) IdentifierAndType
---     parseParam =
---       do
---         tok <- parseToken isIdentifier
---
---         name <-
---           case tok of
---             MkToken (IDENTIFIER n) _ _ => pure n
---             _ => left ["Expected parameter name"]
---
---         ty <- parseOptionalType
---         pure (name, ty)
---
---     optionalParam : Parser (List Token) (Maybe IdentifierAndType)
---     optionalParam =
---           (do p <- parseParam; pure (Just p))
---       <|> pure Nothing
---
---     parseParams : Parser (List Token) (List IdentifierAndType)
---     parseParams =
---       do
---         first <- optionalParam
---
---         case first of
---           Nothing => pure []
---           Just x =>
---             do
---               xs <- many $
---                 do
---                   _ <- many parseLineEnd
---                   _ <- parseToken (tokenTypeIs COMMA)
---                   _ <- many parseLineEnd
---                   parseParam
---               pure (x :: xs)
---
---     parseOptionalReturnType : Parser (List Token) ExprType
---     parseOptionalReturnType =
---       parseOptionalType
--- parseFuncStmt =
---   do
---     _ <- parseToken (tokenTypeIs FN)
---
---     nameTok <- parseToken isIdentifier
---     name <- extractName nameTok
---
---     _ <- many parseLineEnd
---     _ <- parseToken (tokenTypeIs LEFT_PAREN)
---     _ <- many parseLineEnd
---
---     params <- parseParams
---
---     _ <- many parseLineEnd
---     _ <- parseToken (tokenTypeIs RIGHT_PAREN)
---
---     retType <- parseOptionalReturnType
---
---     _ <- many parseLineEnd
---
---     body <- parseBlock
---
---     pure $
---       StmtFunc
---         (name, retType)
---         params
---         body
---
---   where
---     extractName             : Token -> Parser (List Token) Identifier
---     parseOptionalType       : Parser (List Token) ExprType
---     parseParam              : Parser (List Token) IdentifierAndType
---     parseParams             : Parser (List Token) (List IdentifierAndType)
---     optionalParam           : Parser (List Token) (Maybe IdentifierAndType)
---     parseOptionalReturnType : Parser (List Token) ExprType
---
---     extractName tok =
---       case tok of
---         MkToken (IDENTIFIER n) _ _ =>
---           pure n
---
---         _ =>
---           left ["Expected function name"]
---
---     parseOptionalType =
---       do
---         state <- lift get
---
---         case parse parser state of
---           (_, Left _) =>
---             pure TypeUnknown
---
---           (state', Right ty) =>
---             do
---               lift $ put state'
---               pure ty
---
---       where
---         parser : Parser (List Token) ExprType
---         parser =
---           do
---             _ <- many parseLineEnd
---             _ <- parseToken (tokenTypeIs COLON)
---             _ <- many parseLineEnd
---             parseExprType
---
---     parseParam =
---       do
---         tok <- parseToken isIdentifier
---
---         name <-
---           case tok of
---             MkToken (IDENTIFIER n) _ _ =>
---               pure n
---
---             _ =>
---               left ["Expected parameter name"]
---
---         ty <- parseOptionalType
---
---         pure (name, ty)
---
---     parseParams =
---       do
---         first <- optionalParam
---
---         case first of
---           Nothing =>
---             pure []
---
---           Just x =>
---             do
---               xs <- many $
---                 do
---                   _ <- many parseLineEnd
---                   _ <- parseToken (tokenTypeIs COMMA)
---                   _ <- many parseLineEnd
---                   parseParam
---
---               pure (x :: xs)
---
---     optionalParam =
---           (do p <- parseParam; pure (Just p))
---       <|> pure Nothing
---
---     parseOptionalReturnType =
---       parseOptionalType
+    label <- case tok of
+               IDENTIFIER s => pure s
+               _ => left ["Expected label after goto"]
 
-parseProgram : Parser (List Token) Stmt
-parseProgram =
+    pure (StmtIf cond label)
+
+------------------------------------------------------------
+-- GOTO
+------------------------------------------------------------
+
+parseGoto : Parser (List Token) Stmt
+parseGoto =
   do
-    _ <- many parseLineEnd
+    _ <- parseToken (isTokenType GOTO)
 
-    stmts <- parseStmts
+    MkToken tok _ _ <- parseToken isIdentifier
 
-    _ <- many parseLineEnd
+    label <- case tok of
+               IDENTIFIER s => pure s
+               _ => left ["Expected label after goto"]
 
-    remaining <- lift get
+    pure (StmtGoto label)
 
-    case remaining of
-      [] =>
-        pure (StmtBlock stmts)
+------------------------------------------------------------
+-- PRINT
+------------------------------------------------------------
 
-      [MkToken EOF _ _] =>
-        pure (StmtBlock stmts)
+parsePrint : Parser (List Token) Stmt
+parsePrint =
+  do
+    _ <- parseToken (isTokenType PRINT)
 
-      toks =>
-        left ["Unexpected tokens at end of program: " ++ show toks]
+    expr <- parseExpr
+
+    pure (StmtPrint expr)
+
+------------------------------------------------------------
+-- SINGLE STATEMENT
+------------------------------------------------------------
+
+parseStmt : Parser (List Token) Stmt
+parseStmt =
+      parseIfGoto
+  <|> parseGoto
+  <|> parsePrint
+  <|> parseLabel
+  <|> parseAssign
+
+------------------------------------------------------------
+-- PROGRAM
+------------------------------------------------------------
+
+parseStmtLine : Parser (List Token) Stmt
+parseStmtLine =
+  do
+    stmt <- parseStmt
+    skipNewlines
+    pure stmt
+
+parseStmtList : Parser (List Token) (List Stmt)
+parseStmtList =
+  do
+    skipNewlines
+    many parseStmtLine
