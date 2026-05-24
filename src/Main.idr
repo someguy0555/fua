@@ -55,9 +55,9 @@ runProgram stmts =
     Left err => printLn err
     Right env =>
       do
-        printLn "Env:"
-        print env
-        printLn "Program check successful"
+        -- printLn $ "stmts: " ++ show stmts
+        -- printLn env
+        -- printLn "Program check successful"
         final <- exec stmts env 0
         pure ()
 
@@ -71,8 +71,8 @@ execProgram src = do
         (_, Left perr) => printLn perr
 
         (_, Right stmts) => do
-          printLn $ "Why does this not work? "
-          printLn $ show src
+          -- printLn $ "Why does this not work? "
+          -- printLn $ show src
           _ <- runProgram stmts
           pure ()
 

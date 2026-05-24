@@ -89,49 +89,44 @@ expr0 = ExprOperator Add [ExprOperand 2, ExprOperand 2]
 myTrace : (msg : String) -> (result : a) -> a
 myTrace x val = force $ unsafePerformIO (do putStrLn x; pure val)
 
-parseOperator : Operator n -> (Token -> Bool) -> Parser (List Token) ( Operator n )
+parseOperator : Operator n -> (Token -> Bool) -> Parser (List Token) (Operator n)
 parseOperator op predicate =
   do
-    tokens <- lift get
-    case tokens of
-      [] => left [ "No token found" ]
-      (x::xs) => if predicate x
-        then do
-          lift . put $ xs
-          pure op
-        else left [ "parseOperator: token '" ++ (show x) ++ "' in '" ++ show tokens ++ "' does not fulfill predicate" ]
+    t <- parseToken (\x => predicate x)
+    pure op
+-- parseOperator : Operator n -> (Token -> Bool) -> Parser (List Token) ( Operator n )
+-- parseOperator op predicate =
+--   do
+--     tokens <- lift get
+--     case tokens of
+--       [] => left [ "No token found" ]
+--       (x::xs) => if predicate x
+--         then do
+--           lift . put $ xs
+--           pure op
+--         else left [ "parseOperator: token '" ++ (show x) ++ "' in '" ++ show tokens ++ "' does not fulfill predicate" ]
 
 parseOperatorUsingTokenType : Operator n -> TokenType -> Parser (List Token) (Operator n)
 parseOperatorUsingTokenType op tt =
-  parserOverwriteError
-    (modifyLastError (\txt => "Failed to parse operator using token type '" ++ show tt ++ "' in: " ++ txt))
-    $
-    parseOperator op (isTokenType tt)
+  do
+    _ <- parseToken (isTokenType tt)
+    pure op
 
-parseLeftAssoc : Parser (List Token) Expr -> Parser (List Token) (Operator 2) -> Parser (List Token) Expr
+parseLeftAssoc : Parser (List Token) Expr ->
+                  Parser (List Token) (Operator 2) ->
+                  Parser (List Token) Expr
 parseLeftAssoc lowerParser opParser =
   do
     first <- lowerParser
-    continue first
-
+    loop first
   where
-    continue : Expr -> Parser (List Token) Expr
-    parser   : Parser (List Token) (Operator 2, Expr)
-
-    continue leftExpr =
-      do
-        state <- lift get
-        case parse parser state of
-          (_, Left _) => pure leftExpr
-          (state', Right (op, rightExpr)) => do
-            lift $ put state'
-            continue (ExprOperator op [leftExpr, rightExpr])
-
-    parser =
-      do
-        op <- opParser
-        rhs <- lowerParser
-        pure (op, rhs)
+    loop leftExpr =
+      (do
+          op <- opParser
+          rhs <- lowerParser
+          loop (ExprOperator op [leftExpr, rhs])
+      )
+      <|> pure leftExpr
 
 parsePrimary         : Parser (List Token) Expr
 parseUnary           : Parser (List Token) Expr

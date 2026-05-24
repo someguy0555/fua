@@ -45,6 +45,14 @@ some parser =
         right r
       (state', Left e) => left e -- Doesn't happen, but put this here anyway
 
+peek : Parser (List a) a
+peek =
+  do
+    toks <- lift get
+    case toks of
+      (t :: _) => pure t
+      [] => left ["No tokens"]
+
 parserOverwriteError : (ErrorMsg -> ErrorMsg) -> Parser b a -> Parser b a
 parserOverwriteError func parser =
   do
@@ -76,3 +84,4 @@ tryParse resetState parser =
       (state', Right rh) => do
         lift . put $ state'
         pure rh
+

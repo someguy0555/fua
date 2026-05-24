@@ -62,24 +62,39 @@ pass1 [] env = Right env
 
 pass1 (StmtLabel name :: xs) env =
   case lookupSym name env.symbols of
+    Just Label => pass1 xs env
     Just (Var _) => Left (LabelVarConflict name)
-    Just Label   => Left (VarLabelConflict name)
     Nothing =>
       let symbols' = insert name Label env.symbols
       in pass1 xs (MkEnv symbols' env.code)
-
+-- pass1 (StmtLabel name :: xs) env =
+--   case lookupSym name env.symbols of
+--     Just (Var _) => Left (LabelVarConflict name)
+--     Just Label   => Left (VarLabelConflict name)
+--     Nothing =>
+--       let symbols' = insert name Label env.symbols
+--       in pass1 xs (MkEnv symbols' env.code)
 
 pass1 (StmtAssign name _ :: xs) env =
   case lookupSym name env.symbols of
     Just Label =>
-      Left (VarLabelConflict name)
-
+      Left (LabelVarConflict name)
     Just (Var _) =>
       pass1 xs env
-
     Nothing =>
-      let symbols' = insert name (Var 1) env.symbols
+      let symbols' = insert name (Var 0) env.symbols
       in pass1 xs (MkEnv symbols' env.code)
+-- pass1 (StmtAssign name _ :: xs) env =
+--   case lookupSym name env.symbols of
+--     Just Label =>
+--       Left (VarLabelConflict name)
+--
+--     Just (Var _) =>
+--       pass1 xs env
+--
+--     Nothing =>
+--       let symbols' = insert name (Var 1) env.symbols
+--       in pass1 xs (MkEnv symbols' env.code)
 
 pass1 (StmtPrint _ :: xs) env =
   pass1 xs env
@@ -140,5 +155,5 @@ checkProgram stmts =
        Left err => Left err
        Right env =>
          case pass2 stmts env.symbols of
-           Left err => Left err
+           Left err => trace ( "checkProgram: " ++ show stmts ) $ Left err
            Right _  => Right (MkEnv env.symbols stmts)

@@ -110,6 +110,7 @@ Eq TokenType where
 
   (==) _ _ = False
 
+public export
 record Token where
   constructor MkToken
   token  : TokenType
@@ -238,11 +239,11 @@ parseIdentifier =
   where
     isIdentifierHead : Char -> Bool
     isIdentifierHead '_' = True
-    isIdentifierHead chr = isAlpha chr
+    isIdentifierHead chr = isAlpha chr || (chr == '_')
     -- isIdentifierHead '_' = trace ("TRACE HEAD: " ++ show '_') $ True
     -- isIdentifierHead chr = trace ("TRACE HEAD: " ++ show chr) $ isAlpha chr
     isIdentifierTail : Char -> Bool
-    isIdentifierTail chr = isAlpha chr || isDigit chr
+    isIdentifierTail chr = isAlpha chr || isDigit chr || (chr == '_')
 
 parseWhiteSpace : Parser LexerState ()
 parseWhiteSpace =

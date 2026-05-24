@@ -154,6 +154,71 @@ findLabel name (_ :: xs) i =
 -- EXECUTION LOOP
 ------------------------------------------------------------
 
+-- exec : List Stmt -> Env -> Nat -> IO ()
+-- exec code env pc = do
+--   putStrLn ("PC = " ++ show pc)
+--
+--   if pc >= length code
+--     then do
+--     putStrLn "HALT (pc out of bounds)"
+--     pure ()
+--     else
+--       case getAt pc code of
+--
+--         Nothing => do
+--           putStrLn "HALT (Nothing at pc)"
+--           pure ()
+--
+--         Just stmt => do
+--           putStrLn ("STM = " ++ show stmt)
+--
+--           case stmt of
+--
+--             StmtAssign x e => do
+--               let v = eval env e
+--               putStrLn ("ASSIGN " ++ x ++ " = " ++ show v)
+--               let env' = setVar x v env
+--               exec code env' (pc + 1)
+--
+--             StmtPrint e => do
+--               let v = eval env e
+--               putStrLn ("PRINT = " ++ show v)
+--               printLn (show v)
+--               exec code env (pc + 1)
+--
+--             StmtLabel l => do
+--               putStrLn ("LABEL " ++ l)
+--               exec code env (pc + 1)
+--
+--             StmtIf cond label => do
+--               let v = eval env cond
+--               putStrLn ("IF cond = " ++ show v ++ " goto " ++ label)
+--
+--               if v /= 0 then
+--                 case findLabel label code 0 of
+--                   Just target => do
+--                     putStrLn ("JUMP to " ++ show target)
+--                     exec code env target
+--
+--                   Nothing => do
+--                     putStrLn ("LABEL NOT FOUND: " ++ label)
+--                     exec code env (pc + 1)
+--                 else do
+--                   putStrLn "IF FALSE"
+--                   exec code env (pc + 1)
+--
+--             StmtGoto label => do
+--               putStrLn ("GOTO " ++ label)
+--
+--               case findLabel label code 0 of
+--                 Just target => do
+--                   putStrLn ("JUMP to " ++ show target)
+--                   exec code env target
+--
+--                 Nothing => do
+--                   putStrLn ("LABEL NOT FOUND: " ++ label)
+--                   exec code env (pc + 1)
+--
 exec : List Stmt -> Env -> Nat -> IO ()
 exec code env pc = do
   -- putStrLn ("PC = " ++ show pc)
