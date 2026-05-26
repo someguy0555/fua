@@ -81,3 +81,7 @@ readInteger str =
       Nothing => Nothing
       Just lsInt =>
         Just (cast sign * packInteger 0 lsInt)
+
+predNat : Nat -> Nat
+predNat Z = Z
+predNat (S k) = k

@@ -226,45 +226,150 @@ parseExpr =
   parseEquality
   -- (parserOverwriteError (\err => err ++ ["parseEquality in parseExpr failed"]) $ parseEquality )
 
--- Idk what to do with this shit
-dummyToken : TokenType -> Token
-dummyToken tt = MkToken tt 0 0
+------------------------------------------------------------
+-- TYPED STATE MACHINE
+------------------------------------------------------------
 
-tok0 : List Token
-tok0 = map (dummyToken) [INTEGER 0, PLUS, INTEGER 2]
+record ExprEnv where
+  constructor MkExprEnv
+  symbols : SortedMap Identifier Integer
 
-tok1 : List Token
-tok1 = map (dummyToken) [MINUS, INTEGER 2]
+data EvalStep : Type where
+  StepEval : ExprEnv -> Expr -> EvalStep
 
-tok2 : List Token
-tok2 = map (dummyToken) [BANG, INTEGER 2]
+data Frame
+  = EvalR Expr
+  | EvalOp2L (Integer -> Integer -> Integer) Expr
+  | EvalOp2R (Integer -> Integer -> Integer) Integer
 
-tok3 : List Token
-tok3 = map (dummyToken) []
+data EvalState
+  = Running ExprEnv Expr (List Frame)
+  | Done ExprEnv Integer
 
-tokUnary0 : List Token
-tokUnary0 = map (dummyToken) [BANG, INTEGER 2]
+unwind : ExprEnv -> Integer -> List Frame -> EvalState
+step : EvalState -> EvalState
+evalExpr : ExprEnv -> Expr -> Integer
+runExpr : ExprEnv -> Expr -> Integer
 
-tokUnary1 : List Token
-tokUnary1 = map (dummyToken) [BANG, BANG, INTEGER 2]
+step (Done env v) = Done env v
 
-tokUnary2 : List Token
-tokUnary2 = map (dummyToken) [INTEGER 2]
+-- Evaluate a literal
+step (Running env (ExprOperand n) stack) =
+  case stack of
+    [] => Done env n
+    _  => unwind env n stack
 
-tokUnary3 : List Token
-tokUnary3 = map (dummyToken) [BANG, BANG]
+-- Evaluate variable
+step (Running env (ExprVariable x) stack) =
+  let v =
+        case SortedMap.lookup x env.symbols of
+          Just v' => v'
+          Nothing  => 0
+  in
+    case stack of
+      [] => Done env v
+      _  => unwind env v stack
 
-tokFactor0 : List Token
-tokFactor0 = map (dummyToken) [INTEGER 2, STAR, INTEGER 2]
 
-tokFactor1 : List Token
-tokFactor1 = map (dummyToken) [INTEGER 1, STAR, INTEGER 2, STAR, INTEGER 3]
+-- Operator application (dispatch)
+step (Running env (ExprOperator op args) stack) =
+  case op of
 
-tokFactor2 : List Token
-tokFactor2 = map (dummyToken) [INTEGER 1, STAR, INTEGER 2, STAR, INTEGER 3, STAR, INTEGER 4]
+    Add =>
+      case args of
+        [a,b] => Running env a ((EvalOp2L (+) b) :: stack)
+        _     => Done env 0
 
-tokFactor3 : List Token
-tokFactor3 = map (dummyToken) [INTEGER 1, STAR]
+    Sub =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (-) b :: stack)
+        _     => Done env 0
 
-tokFactor4 : List Token
-tokFactor4 = map (dummyToken) [BANG, BANG, INTEGER 2, STAR, BANG, INTEGER 2]
+    Mul =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (*) b :: stack)
+        _     => Done env 0
+
+    Div =>
+      case args of
+        [a,b] => Running env a (EvalOp2L div b :: stack)
+        _     => Done env 0
+
+    Mod =>
+      case args of
+        [a,b] => Running env a (EvalOp2L mod b :: stack)
+        _     => Done env 0
+
+    Neg =>
+      case args of
+        [a] => Running env a (EvalOp2L (\x, y => 0 - x) (ExprOperand 0) :: stack)
+        _   => Done env 0
+
+    Not =>
+      case args of
+        [a] => Running env a (EvalOp2L (\x, _ => if x == 0 then 1 else 0) (ExprOperand 0) :: stack)
+        _   => Done env 0
+
+    Equal =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (\x, y => if x == y then 1 else 0) b :: stack)
+        _     => Done env 0
+
+    NotEqual =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (\x, y => if x /= y then 1 else 0) b :: stack)
+        _     => Done env 0
+
+    Less =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (\x, y => if x < y then 1 else 0) b :: stack)
+        _     => Done env 0
+
+    Greater =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (\x, y => if x > y then 1 else 0) b :: stack)
+        _     => Done env 0
+
+    LessEqual =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (\x, y => if x <= y then 1 else 0) b :: stack)
+        _     => Done env 0
+
+    GreaterEqual =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (\x, y => if x >= y then 1 else 0) b :: stack)
+        _     => Done env 0
+
+    And =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (\x, y => if x /= 0 && y /= 0 then 1 else 0) b :: stack)
+        _     => Done env 0
+
+    Or =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (\x, y => if x /= 0 || y /= 0 then 1 else 0) b :: stack)
+        _     => Done env 0
+
+unwind env v [] = Done env v
+
+unwind env v (EvalOp2L f rhs :: stack) =
+  Running env rhs (EvalOp2R f v :: stack)
+
+unwind env v (EvalOp2R f v1 :: stack) =
+  let v' = f v1 v
+  in unwind env v' stack
+
+unwind env v (EvalR e :: stack) =
+  Running env e (EvalOp2R (\x, y => x) v :: stack)
+
+evalExpr env e =
+  case step (Running env e []) of
+    Done _ v => v
+    Running env' e' st => evalExpr env' e'
+
+runExpr env e = go (Running env e [])
+  where
+    go : EvalState -> Integer
+    go (Done _ v) = v
+    go st =
+      go (step st)

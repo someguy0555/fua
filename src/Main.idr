@@ -30,8 +30,6 @@ parseCode src =
         (tokan, Left lf) => Left lf
         (tokan, Right e) => Right e
 
-expr00 = "2 + 3 * 3"
-
 parseProgram : String -> Either ErrorMsg (List Stmt)
 parseProgram src =
   case parseText lexer src of
@@ -101,17 +99,3 @@ main =
 
       _ =>
         printLn "Usage: program <file>"
-
-code00 = """
-a = 0
-b = 1
-repeat:
-if b > 100 goto fib
-c = a + b
-a = b
-b = c
-print c
-if 1 goto repeat
-fib:
-"""
-
