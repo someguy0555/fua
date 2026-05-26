@@ -1,0 +1,21 @@
+state = 0
+
+loop:
+    if state == 0 goto red
+    if state == 1 goto green
+    if state == 2 goto yellow
+
+red:
+    print 0
+    state = 1
+    goto loop
+
+green:
+    print 1
+    state = 2
+    goto loop
+
+yellow:
+    print 2
+    state = 0
+    goto loop

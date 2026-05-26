@@ -13,10 +13,6 @@ import Stmt
 import Utility
 import Resolve
 
-------------------------------------------------------------
--- VALUE
-------------------------------------------------------------
-
 data Value
   = VInt Integer
 
@@ -26,18 +22,10 @@ Eq Value where
 Show Value where
   show (VInt x) = show x
 
-------------------------------------------------------------
--- RUNTIME STATE
-------------------------------------------------------------
-
 record RT where
   constructor MkRT
   env   : Env
   pc    : Nat
-
-------------------------------------------------------------
--- HELPERS
-------------------------------------------------------------
 
 getVar : Identifier -> Env -> Integer
 getVar x env =
@@ -49,10 +37,6 @@ setVar : Identifier -> Integer -> Env -> Env
 setVar x v env =
   let sym = insert x (Var v) env.symbols
   in { symbols := sym } env
-
-------------------------------------------------------------
--- EVAL EXPRESSIONS
-------------------------------------------------------------
 
 eval : Env -> Expr -> Integer
 eval env (ExprOperand n) = n
@@ -136,10 +120,6 @@ eval env (ExprOperator op args) =
         [a,b] => if eval env a /= 0 || eval env b /= 0 then 1 else 0
         _     => 0
 
-------------------------------------------------------------
--- FIND LABEL POSITION
-------------------------------------------------------------
-
 findLabel : Identifier -> List Stmt -> Nat -> Maybe Nat
 findLabel _ [] _ = Nothing
 
@@ -149,10 +129,6 @@ findLabel name (StmtLabel l :: xs) i =
 
 findLabel name (_ :: xs) i =
   findLabel name xs (i + 1)
-
-------------------------------------------------------------
--- EXECUTION LOOP
-------------------------------------------------------------
 
 -- exec : List Stmt -> Env -> Nat -> IO ()
 -- exec code env pc = do
@@ -248,7 +224,7 @@ exec code env pc = do
             StmtPrint e => do
               let v = eval env e
               -- putStrLn ("PRINT = " ++ show v)
-              printLn (show v)
+              printLn (pack . filter ('"' /=) . unpack . show $ v)
               exec code env (pc + 1)
 
             StmtLabel l => do
@@ -283,93 +259,4 @@ exec code env pc = do
                 Nothing => do
                   -- putStrLn ("LABEL NOT FOUND: " ++ label)
                   exec code env (pc + 1)
-
--- exec : List Stmt -> Env -> Nat -> IO Env
--- exec code env pc =
---   case drop pc code of
---     [] => pure env
---
---     (stmt :: _) => case stmt of
---
---       StmtAssign x e =>
---         let
---           v = eval env e
---           env' = setVar x v env
---         in
---           do
---             printLn "StmtAssign"
---             exec code env' (pc + 1)
---
---       StmtPrint e =>
---         let v = eval env e
---         in
---           do
---             printLn "StmtPrint"
---             printLn (show v)
---             exec code env (pc + 1)
---
---       StmtLabel _ =>
---         do
---           printLn "StmtLabel"
---           exec code env (pc + 1)
---
---       StmtIf cond label =>
---         let v = eval env cond
---         in
---           do
---             printLn "StmtIf"
---             if v /= 0
---               then
---                 case findLabel label code 0 of
---                   Just target => exec code env target
---                   Nothing     => exec code env (pc + 1)
---               else
---                 exec code env (pc + 1)
---
---       StmtGoto label =>
---         do
---           printLn "StmtGoto"
---           case findLabel label code 0 of
---             Just target => exec code env target
---             Nothing     => exec code env (pc + 1)
-
--- exec : List Stmt -> Env -> Nat -> IO Env
--- exec code env pc =
---   case drop pc code of
---     [] => pure env
---
---     (stmt :: _) =>
---       case stmt of
---
---         StmtAssign x e =>
---           let v = eval env e
---               env' = setVar x v env
---           in exec code env' (pc + 1)
---
---         StmtPrint e =>
---           let v = eval env e in
---           do
---             printLn (show v)
---             exec code env (pc + 1)
---
---         StmtLabel _ =>
---           exec code env (pc + 1)
---
---         StmtIf cond label =>
---           let v = eval env cond
---           in if v /= 0 then
---                case findLabel label code 0 of
---                  Just target => exec code env target
---                  Nothing     => exec code env (pc + 1)
---              else
---                exec code env (pc + 1)
---
---         StmtGoto label =>
---           let v = eval env (ExprOperand 1)
---           in if v /= 0 then
---                case findLabel label code 0 of
---                  Just target => exec code env target
---                  Nothing     => exec code env (pc + 1)
---              else
---                exec code env (pc + 1)
 

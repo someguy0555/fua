@@ -51,11 +51,6 @@ Show CheckError where
 lookupSym : Identifier -> SortedMap Identifier SymType -> Maybe SymType
 lookupSym = SortedMap.lookup
 
-
-------------------------------------------------------------
--- PASS 1 : build symbol table (vars + labels)
-------------------------------------------------------------
-
 pass1 : List Stmt -> Env -> Either CheckError Env
 
 pass1 [] env = Right env
@@ -67,13 +62,6 @@ pass1 (StmtLabel name :: xs) env =
     Nothing =>
       let symbols' = insert name Label env.symbols
       in pass1 xs (MkEnv symbols' env.code)
--- pass1 (StmtLabel name :: xs) env =
---   case lookupSym name env.symbols of
---     Just (Var _) => Left (LabelVarConflict name)
---     Just Label   => Left (VarLabelConflict name)
---     Nothing =>
---       let symbols' = insert name Label env.symbols
---       in pass1 xs (MkEnv symbols' env.code)
 
 pass1 (StmtAssign name _ :: xs) env =
   case lookupSym name env.symbols of
@@ -84,17 +72,6 @@ pass1 (StmtAssign name _ :: xs) env =
     Nothing =>
       let symbols' = insert name (Var 0) env.symbols
       in pass1 xs (MkEnv symbols' env.code)
--- pass1 (StmtAssign name _ :: xs) env =
---   case lookupSym name env.symbols of
---     Just Label =>
---       Left (VarLabelConflict name)
---
---     Just (Var _) =>
---       pass1 xs env
---
---     Nothing =>
---       let symbols' = insert name (Var 1) env.symbols
---       in pass1 xs (MkEnv symbols' env.code)
 
 pass1 (StmtPrint _ :: xs) env =
   pass1 xs env
@@ -104,10 +81,6 @@ pass1 (StmtIf _ _ :: xs) env =
 
 pass1 (StmtGoto _ :: xs) env =
   pass1 xs env
-
-------------------------------------------------------------
--- PASS 2 : validate goto targets
-------------------------------------------------------------
 
 pass2 : List Stmt -> SortedMap Identifier SymType -> Either CheckError ()
 
@@ -143,10 +116,6 @@ pass2 (StmtGoto name :: xs) env =
 
     Just Label =>
       pass2 xs env
-
-------------------------------------------------------------
--- FULL CHECK PIPELINE
-------------------------------------------------------------
 
 checkProgram : List Stmt -> Either CheckError Env
 checkProgram stmts =

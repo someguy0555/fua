@@ -19,6 +19,7 @@ import Stmt
 import Resolve
 import Interpreter
 import Utility
+import Theorem
 
 parseCode : String -> Either ErrorMsg Expr
 parseCode src =

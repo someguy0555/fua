@@ -16,10 +16,6 @@ import Lexer
 import Expr
 import Utility
 
-------------------------------------------------------------
--- STATEMENTS
-------------------------------------------------------------
-
 data Stmt : Type where
   StmtAssign : Identifier -> Expr -> Stmt
   StmtLabel  : Identifier -> Stmt
@@ -44,19 +40,11 @@ Show Stmt where
   show (StmtPrint expr) =
     "print " ++ show expr
 
-------------------------------------------------------------
--- NEWLINES
-------------------------------------------------------------
-
 skipNewlines : Parser (List Token) ()
 skipNewlines =
   do
     _ <- many (parseToken (isTokenType NEWLINE))
     pure ()
-
-------------------------------------------------------------
--- LABEL
-------------------------------------------------------------
 
 parseLabel : Parser (List Token) Stmt
 parseLabel =
@@ -73,10 +61,6 @@ parseLabel =
       _ =>
         left ["Not a label"]
 
-------------------------------------------------------------
--- ASSIGNMENT
-------------------------------------------------------------
-
 parseAssign : Parser (List Token) Stmt
 parseAssign =
   do
@@ -92,10 +76,6 @@ parseAssign =
 
       _ =>
         left ["Not an assignment"]
-
-------------------------------------------------------------
--- IF GOTO
-------------------------------------------------------------
 
 parseIfGoto : Parser (List Token) Stmt
 parseIfGoto =
@@ -114,10 +94,6 @@ parseIfGoto =
 
     pure (StmtIf cond label)
 
-------------------------------------------------------------
--- GOTO
-------------------------------------------------------------
-
 parseGoto : Parser (List Token) Stmt
 parseGoto =
   do
@@ -131,10 +107,6 @@ parseGoto =
 
     pure (StmtGoto label)
 
-------------------------------------------------------------
--- PRINT
-------------------------------------------------------------
-
 parsePrint : Parser (List Token) Stmt
 parsePrint =
   do
@@ -144,10 +116,6 @@ parsePrint =
 
     pure (StmtPrint expr)
 
-------------------------------------------------------------
--- SINGLE STATEMENT
-------------------------------------------------------------
-
 parseStmt : Parser (List Token) Stmt
 parseStmt =
       parseIfGoto
@@ -155,10 +123,6 @@ parseStmt =
   <|> parsePrint
   <|> parseLabel
   <|> parseAssign
-
-------------------------------------------------------------
--- PROGRAM
-------------------------------------------------------------
 
 parseStmtLine : Parser (List Token) Stmt
 parseStmtLine =
