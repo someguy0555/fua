@@ -15,6 +15,7 @@ import Expr
 import Stmt
 import Utility
 import Resolve
+import Interpreter
 
 -- lengthsAreEqual1 : { k : Nat } -> { x : a } -> { xs : Vect n a } -> ( length xs = k ) -> (length (x :: xs) = S k)
 -- lengthsAreEqual2 : { k : Nat } -> { x : a } -> { xs : Vect n a } -> (length (x :: xs) = S k) -> ( length xs = k)
@@ -128,3 +129,78 @@ LabelsOf (_ :: xs) = LabelsOf xs
 -- -- isDone : EvalState -> Bool
 -- -- isDone (Done _ _) = True
 -- -- isDone _          = False
+
+-- theorem_eval_correct :
+--   (env : Env) ->
+--   (e : Expr) ->
+--   runExpr env e = eval env e
+-- theorem_eval_correct env (ExprOperand n) = Refl
+-- theorem_eval_correct env (ExprVariable x) = Refl
+-- theorem_eval_correct env (ExprOperator op args) =
+--   case op of
+--
+--     Add =>
+--       case args of
+--         [a, b] =>
+--           let ih1 = theorem_eval_correct env a
+--               ih2 = theorem_eval_correct env b
+--           in rewrite ih1 in rewrite ih2 in Refl
+--
+--     Sub =>
+--       case args of
+--         [a, b] =>
+--           let ih1 = theorem_eval_correct env a
+--               ih2 = theorem_eval_correct env b
+--           in rewrite ih1 in rewrite ih2 in Refl
+--
+--     Mul =>
+--       case args of
+--         [a, b] =>
+--           let ih1 = theorem_eval_correct env a
+--               ih2 = theorem_eval_correct env b
+--           in rewrite ih1 in rewrite ih2 in Refl
+--
+--     Div =>
+--       case args of
+--         [a, b] =>
+--           let ih1 = theorem_eval_correct env a
+--               ih2 = theorem_eval_correct env b
+--           in rewrite ih1 in rewrite ih2 in Refl
+--
+--     Mod =>
+--       case args of
+--         [a, b] =>
+--           let ih1 = theorem_eval_correct env a
+--               ih2 = theorem_eval_correct env b
+--           in rewrite ih1 in rewrite ih2 in Refl
+--
+--     _ => Refl
+
+theorem_eval_operand :
+  (env : Env) ->
+  (n : Integer) ->
+  eval env (ExprOperand n) = n
+theorem_eval_operand env n = Refl
+
+theorem_eval_variable :
+  (env : Env) ->
+  (x : Identifier) ->
+  eval env (ExprVariable x) = getVar x env
+theorem_eval_variable env x = Refl
+
+exprSize : Expr -> Nat
+exprSize (ExprOperand _) = 1
+exprSize (ExprVariable _) = 1
+exprSize (ExprOperator _ args) = 1 + sum (map exprSize (toList args))
+
+theorem_exprSize_positive :
+  (e : Expr) -> exprSize e = 0 -> Void
+theorem_exprSize_positive (ExprOperand _) prf impossible
+theorem_exprSize_positive (ExprVariable _) prf impossible
+theorem_exprSize_positive (ExprOperator _ _) prf impossible
+
+theorem_operator_vect_length :
+  (n : Nat) ->
+  (op : Operator n) ->
+  (args : Vect n Expr) ->
+  length args = n
