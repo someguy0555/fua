@@ -179,7 +179,7 @@ LabelsOf (_ :: xs) = LabelsOf xs
 theorem_eval_operand :
   (env : Env) ->
   (n : Integer) ->
-  eval env (ExprOperand n) = n
+  runExpr env (ExprOperand n) = n
 theorem_eval_operand env n = Refl
 
 theorem_eval_variable :
@@ -199,8 +199,12 @@ theorem_exprSize_positive (ExprOperand _) prf impossible
 theorem_exprSize_positive (ExprVariable _) prf impossible
 theorem_exprSize_positive (ExprOperator _ _) prf impossible
 
-theorem_operator_vect_length :
-  (n : Nat) ->
-  (op : Operator n) ->
-  (args : Vect n Expr) ->
-  length args = n
+theorem_duplicate_label_rejected :
+  (name : Identifier) ->
+  (xs : List Stmt) ->
+  (env : Env) ->
+  lookupSym name env.symbols = Just Label ->
+  pass1 (StmtLabel name :: xs) env =
+    Left (IsError "IsDuplicatelabel" name)
+
+theorem_duplicate_label_rejected _ _ _ prf = rewrite prf in Refl

@@ -36,17 +36,14 @@ covering
 Show Env where
   show (MkEnv symbols code) = "symbols: " ++ show ( Data.SortedMap.toList symbols ) ++ "; code: " ++ show code ++ ";"
 
-data CheckError
-  = VarLabelConflict Identifier
-  | LabelVarConflict Identifier
-  | GotoToVar Identifier
-  | MissingLabel Identifier
-
+data CheckError = IsError String Identifier
+  -- = VarLabelConflict Identifier
+  -- | LabelVarConflict Identifier
+  -- | GotoToVar Identifier
+  -- | MissingLabel Identifier
+  --
 Show CheckError where
-  show (VarLabelConflict identifier) = "Err: VarLabelConflict "     ++ show identifier
-  show (LabelVarConflict identifier) = "Err: LabelVarConflict "     ++ show identifier
-  show (GotoToVar        identifier) = "Err: GotoToVar "            ++ show identifier
-  show (MissingLabel     identifier) = "Err: Unable to find label " ++ show identifier
+  show (IsError str identifier) = str ++ ": " ++ show identifier
 
 lookupSym : Identifier -> SortedMap Identifier SymType -> Maybe SymType
 lookupSym = SortedMap.lookup
@@ -57,8 +54,8 @@ pass1 [] env = Right env
 
 pass1 (StmtLabel name :: xs) env =
   case lookupSym name env.symbols of
-    Just Label => pass1 xs env
-    Just (Var _) => Left (LabelVarConflict name)
+    Just Label => Left (IsError "IsDuplicatelabel" name)
+    Just (Var _) => Left (IsError "LabelVarConflict" name)
     Nothing =>
       let symbols' = insert name Label env.symbols
       in pass1 xs (MkEnv symbols' env.code)
@@ -66,7 +63,7 @@ pass1 (StmtLabel name :: xs) env =
 pass1 (StmtAssign name _ :: xs) env =
   case lookupSym name env.symbols of
     Just Label =>
-      Left (LabelVarConflict name)
+      Left (IsError "LabelVarConflict" name)
     Just (Var _) =>
       pass1 xs env
     Nothing =>
@@ -98,10 +95,10 @@ pass2 (StmtPrint _ :: xs) env =
 pass2 (StmtIf _ name :: xs) env =
   case lookupSym name env of
     Nothing =>
-      Left (MissingLabel name)
+      Left (IsError "MissingLabel" name)
 
     Just (Var _) =>
-      Left (GotoToVar name)
+      Left (IsError "GotoToVar" name)
 
     Just Label =>
       pass2 xs env
@@ -109,10 +106,10 @@ pass2 (StmtIf _ name :: xs) env =
 pass2 (StmtGoto name :: xs) env =
   case lookupSym name env of
     Nothing =>
-      Left (MissingLabel name)
+      Left (IsError "MissingLabel" name)
 
     Just (Var _) =>
-      Left (GotoToVar name)
+      Left (IsError "GotoToVar" name)
 
     Just Label =>
       pass2 xs env

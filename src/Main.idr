@@ -1,5 +1,6 @@
 module Main
 
+-- import System.Random
 import Data.List
 import Data.SortedMap
 import Data.List

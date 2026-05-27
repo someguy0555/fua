@@ -12,7 +12,6 @@ import Expr
 import Stmt
 import Utility
 import Resolve
--- import Theorem
 
 data Value
   = VInt Integer
@@ -38,6 +37,10 @@ setVar : Identifier -> Integer -> Env -> Env
 setVar x v env =
   let sym = insert x (Var v) env.symbols
   in { symbols := sym } env
+
+------------------------------------------------------------
+-- OLD EVAL
+------------------------------------------------------------
 
 eval : Env -> Expr -> Integer
 eval env (ExprOperand n) = n
@@ -175,7 +178,6 @@ step (Running env (ExprVariable x) stack) =
       [] => Done env v
       _  => unwind env v stack
 
-
 -- Operator application (dispatch)
 step (Running env (ExprOperator op args) stack) =
   case op of
@@ -256,17 +258,6 @@ step (Running env (ExprOperator op args) stack) =
         [a,b] => Running env a (EvalOp2L (\x, y => if x /= 0 || y /= 0 then 1 else 0) b :: stack)
         _     => Done env 0
 
--- unwind env v [] = Done env v
---
--- unwind env v (EvalOp2L f rhs :: stack) =
---   Running env rhs (EvalOp2R f v :: stack)
---
--- unwind env v (EvalOp2R f v1 :: stack) =
---   let v' = f v1 v
---   in unwind env v' stack
---
--- unwind env v (EvalR e :: stack) =
---   Running env e (EvalOp2R (\x, y => x) v :: stack)
 unwind env v [] =
   Done env v
 
@@ -280,64 +271,11 @@ unwind env v (EvalOp2R f vLeft :: stack) =
 unwind env v (EvalR e :: stack) =
   Running env e (EvalOp2R (\x, y => x) v :: stack)
 
--- evalExpr env e =
---   case step (Running env e []) of
---     Done _ v => v
---     Running env' e' st => evalExpr env' e'
-
 runExpr env e = go (Running env e [])
   where
     go : EvalState -> Integer
     go (Done _ v) = v
     go st = go (step st)
-
-------------------------------------------------------------
--- PUBLIC INTERFACE (STATE MACHINE WRAPPER)
-------------------------------------------------------------
-
-export
-data ExprRunState
-  = ER Env Expr
-  | ED Env Integer
-
-export
-stepExpr : ExprRunState -> ExprRunState
-stepExpr (ED env v) = ED env v
-stepExpr (ER env e) =
-  case step (Running env e []) of
-    Done env' v => ED env' v
-    Running env' e' st =>
-      case st of
-        [] => ER env' e'
-        _  => ER env' e'
-
-export
-runExprState : Env -> Expr -> Integer
-runExprState env e = go (ER env e)
-  where
-    go : ExprRunState -> Integer
-    go (ED _ v) = v
-    go s = go (stepExpr s)
-------------------------------------------------------------
--- ENV - EXPR ENV BRIDGE
-------------------------------------------------------------
-
--- extractInts : SortedMap Identifier SymType -> SortedMap Identifier Integer
--- extractInts m = go (toList m) empty
---   where
---     go : List (Identifier, SymType) ->
---          SortedMap Identifier Integer ->
---          SortedMap Identifier Integer
---     go [] acc = acc
---
---     go ((k, Var v) :: xs) acc =
---       go xs (insert k v acc)
---
---     go ((_ , Label) :: xs) acc =
---       go xs acc
---
--- toExprEnv : Env -> ExprEnv
--- toExprEnv env = MkExprEnv (extractInts (symbols env))
 
 ------------------------------------------------------------
 -- REST
@@ -437,7 +375,6 @@ exec code env pc = do
           -- putStrLn ("STM = " ++ show stmt)
 
           case stmt of
-
             StmtAssign x e => do
               let v = runExpr env e
               -- putStrLn ("ASSIGN " ++ x ++ " = " ++ show v)
