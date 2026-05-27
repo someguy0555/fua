@@ -1,0 +1,12 @@
+counter = 0
+
+repeat:
+    toprint = counter
+
+    if toprint != 59 goto skip
+        toprint = toprint * 1000
+    skip: 
+    print toprint
+
+    counter = counter + 1
+if counter < 100 goto repeat

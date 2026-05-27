@@ -1,339 +1,421 @@
 module Main
 
-import Prelude.Num -- Why the hell do I need to import this???
 import Data.List
 import Data.SortedMap
 import Data.Vect
 import Data.String
 import Control.Monad.State
-import Data.Either
-import Control.Monad.Error.Either
-
-import Debug.Trace
 import System.File
+import Debug.Trace
 
-import Lexer
-import Parser
 import Expr
 import Stmt
-import Resolved
 import Utility
-import TypeChecking
+import Resolve
 
 data Value
   = VInt Integer
-  | VBool Bool
-  | VReal Double
-  | VString String
-  | VUnit
+
+Eq Value where
+  (==) (VInt x) (VInt y) = x == y
 
 Show Value where
   show (VInt x) = show x
-  show (VBool x) = show x
-  show (VReal x) = show x
-  show (VString x) = x
-  show VUnit = "()"
 
-Eq Value where
-  (==) VUnit VUnit = True
-  (==) (VInt x) (VInt y) = x == y
-  (==) (VBool x) (VBool y) = x == y
-  (==) (VReal a) (VReal (b)) =
-    (a) == (b)
-  (==) (VString x) (VString y) = x == y
-  (==) _ _ = False
+record RT where
+  constructor MkRT
+  env   : Env
+  pc    : Nat
 
-record RTEnv where
-  constructor MkRTEnv
-  parent : Maybe RTEnv
-  vars   : SortedMap RefId Value
+getVar : Identifier -> Env -> Integer
+getVar x env =
+  case SortedMap.lookup x env.symbols of
+    Just (Var v) => v
+    _            => 0
 
-lookupVal : RefId -> RTEnv -> Maybe Value
-lookupVal id env =
-  case SortedMap.lookup id env.vars of
-    Just v  => Just v
-    Nothing =>
-      case env.parent of
-        Just p  => lookupVal id p
-        Nothing => Nothing
+setVar : Identifier -> Integer -> Env -> Env
+setVar x v env =
+  let sym = insert x (Var v) env.symbols
+  in { symbols := sym } env
 
-insertVal : RefId -> Value -> RTEnv -> RTEnv
-insertVal id v env =
-  { vars := SortedMap.insert id v env.vars } env
+------------------------------------------------------------
+-- OLD EVAL
+------------------------------------------------------------
 
-updateVal : RefId -> Value -> RTEnv -> RTEnv
-updateVal id v env =
-  case SortedMap.lookup id env.vars of
-    Just _ =>
-      { vars := SortedMap.insert id v env.vars } env
-    Nothing =>
-      case env.parent of
-        Just p =>
-          let p' = updateVal id v p
-          in { parent := Just p' } env
-        Nothing =>
-          { vars := SortedMap.insert id v env.vars } env
+eval : Env -> Expr -> Integer
+eval env (ExprOperand n) = n
 
-record FunctionDef where
-  constructor MkFn
-  params : List RefId
-  body   : ResolvedStmt
+eval env (ExprVariable x) = getVar x env
 
-FunctionTable : Type
-FunctionTable = SortedMap RefId FunctionDef
+eval env (ExprOperator op args) =
+  case op of
+    Add =>
+      case args of
+        [a,b] => eval env a + eval env b
+        _     => 0
 
-lookupFn : RefId -> FunctionTable -> Maybe FunctionDef
-lookupFn = SortedMap.lookup
+    Sub =>
+      case args of
+        [a,b] => eval env a - eval env b
+        _     => 0
 
-data ExecResult
-  = Normal RTEnv
-  | Return Value RTEnv
+    Mul =>
+      case args of
+        [a,b] => eval env a * eval env b
+        _     => 0
 
-mergeEnv : RTEnv -> RTEnv -> RTEnv
-mergeEnv (MkRTEnv p1 v1) (MkRTEnv _ v2) =
-  MkRTEnv p1 (v2)
--- mergeEnv : RTEnv -> RTEnv -> RTEnv
--- mergeEnv (MkRTEnv p1 v1) (MkRTEnv _ v2) =
---  MkRTEnv p1 (SortedMap.union v2 v1)
+    Div =>
+      case args of
+        [a,b] => eval env a `div` eval env b
+        _     => 0
 
-covering
-evalExpr : RTEnv -> FunctionTable -> ResolvedExpr -> Value
-covering
-execStmt : RTEnv -> FunctionTable -> ResolvedStmt -> ExecResult
-covering
-execStmtList : RTEnv -> FunctionTable -> List ResolvedStmt -> ExecResult
+    Mod =>
+      case args of
+        [a,b] => eval env a `mod` eval env b
+        _     => 0
 
-evalExpr env ft (RConst ty v) =
-  case ty of
-    TypeInt =>
-      case readInteger (show v) of
-        Just n  => VInt n
-        Nothing => VUnit
+    Neg =>
+      case args of
+        [a] => negate (eval env a)
+        _   => 0
 
-    TypeBool =>
-      case show v of
-          "True"  => VBool True
-          "False" => VBool False
-          _       => VUnit
+    Not =>
+      case args of
+        [a] => if eval env a == 0 then 1 else 0
+        _   => 0
 
+    Equal =>
+      case args of
+        [a,b] => if eval env a == eval env b then 1 else 0
+        _     => 0
 
-    TypeReal =>
-      case parseReal (unpack (show v)) of
-        Just (i, f) => VReal (67) -- I hate this code so damn much, I can't stand to look at it in any way whatsoever.
-        -- Just (i, f) => VReal (i + (f/x))
-        Nothing     => VUnit
+    NotEqual =>
+      case args of
+        [a,b] => if eval env a /= eval env b then 1 else 0
+        _     => 0
 
-    TypeString =>
-      VString (show v)
+    Less =>
+      case args of
+        [a,b] => if eval env a < eval env b then 1 else 0
+        _     => 0
 
-    _ =>
-      VUnit
+    Greater =>
+      case args of
+        [a,b] => if eval env a > eval env b then 1 else 0
+        _     => 0
+
+    LessEqual =>
+      case args of
+        [a,b] => if eval env a <= eval env b then 1 else 0
+        _     => 0
+
+    GreaterEqual =>
+      case args of
+        [a,b] => if eval env a >= eval env b then 1 else 0
+        _     => 0
+
+    And =>
+      case args of
+        [a,b] => if eval env a /= 0 && eval env b /= 0 then 1 else 0
+        _     => 0
+
+    Or =>
+      case args of
+        [a,b] => if eval env a /= 0 || eval env b /= 0 then 1 else 0
+        _     => 0
+
+------------------------------------------------------------
+-- TYPED STATE MACHINE
+------------------------------------------------------------
+
+data EvalStep : Type where
+  StepEval : Env -> Expr -> EvalStep
+
+data Frame
+  = EvalR Expr
+  | EvalOp2L (Integer -> Integer -> Integer) Expr
+  | EvalOp2R (Integer -> Integer -> Integer) Integer
+
+data EvalState
+  = Running Env Expr (List Frame)
+  | Done Env Integer
+
+unwind : Env -> Integer -> List Frame -> EvalState
+step : EvalState -> EvalState
+evalExpr : Env -> Expr -> Integer
+runExpr : Env -> Expr -> Integer
+
+step (Done env v) = Done env v
+
+-- Evaluate a literal
+step (Running env (ExprOperand n) stack) =
+  case stack of
+    [] => Done env n
+    _  => unwind env n stack
+
+-- Evaluate variable
+-- step (Running env (ExprVariable x) stack) =
+--   let v =
+--         case SortedMap.lookup x env.symbols of
+--           Just (Var v') =>
+--             trace ("EVAL VAR " ++ show x ++ " = " ++ show v') v'
+--           Just Label =>
+--             trace ("EVAL LABEL " ++ show x) 0
+--           Nothing =>
+--             trace ("EVAL MISS " ++ show x) 0
+--   in
+--     case stack of
+--       [] => Done env v
+--       _  => unwind env v stack
+step (Running env (ExprVariable x) stack) =
+  let v =
+        case SortedMap.lookup x env.symbols of
+          Just (Var v') => v'
+          Just Label     => 0
+          Nothing  => 0
+  in
+    case stack of
+      [] => Done env v
+      _  => unwind env v stack
+
+-- Operator application (dispatch)
+step (Running env (ExprOperator op args) stack) =
+  case op of
+
+    Add =>
+      case args of
+        [a,b] => -- trace ("ADD: " ++ show a ++ " + " ++ show b)
+                 Running env a (EvalOp2L (+) b :: stack)
+        _     => Done env 0
+
+    Sub =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (-) b :: stack)
+        _     => Done env 0
+
+    Mul =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (*) b :: stack)
+        _     => Done env 0
+
+    Div =>
+      case args of
+        [a,b] => Running env a (EvalOp2L div b :: stack)
+        _     => Done env 0
+
+    Mod =>
+      case args of
+        [a,b] => Running env a (EvalOp2L mod b :: stack)
+        _     => Done env 0
+
+    Neg =>
+      case args of
+        [a] => Running env a (EvalOp2L (\x, y => 0 - x) (ExprOperand 0) :: stack)
+        _   => Done env 0
+
+    Not =>
+      case args of
+        [a] => Running env a (EvalOp2L (\x, _ => if x == 0 then 1 else 0) (ExprOperand 0) :: stack)
+        _   => Done env 0
+
+    Equal =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (\x, y => if x == y then 1 else 0) b :: stack)
+        _     => Done env 0
+
+    NotEqual =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (\x, y => if x /= y then 1 else 0) b :: stack)
+        _     => Done env 0
+
+    Less =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (\x, y => if x < y then 1 else 0) b :: stack)
+        _     => Done env 0
+
+    Greater =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (\x, y => if x > y then 1 else 0) b :: stack)
+        _     => Done env 0
+
+    LessEqual =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (\x, y => if x <= y then 1 else 0) b :: stack)
+        _     => Done env 0
+
+    GreaterEqual =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (\x, y => if x >= y then 1 else 0) b :: stack)
+        _     => Done env 0
+
+    And =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (\x, y => if x /= 0 && y /= 0 then 1 else 0) b :: stack)
+        _     => Done env 0
+
+    Or =>
+      case args of
+        [a,b] => Running env a (EvalOp2L (\x, y => if x /= 0 || y /= 0 then 1 else 0) b :: stack)
+        _     => Done env 0
+
+unwind env v [] =
+  Done env v
+
+unwind env v (EvalOp2L f rhs :: stack) =
+  Running env rhs (EvalOp2R f v :: stack)
+
+unwind env v (EvalOp2R f vLeft :: stack) =
+  let result = f vLeft v
+  in unwind env result stack
+
+unwind env v (EvalR e :: stack) =
+  Running env e (EvalOp2R (\x, y => x) v :: stack)
+
+runExpr env e = go (Running env e [])
   where
-    parseReal : List Char -> Maybe (Integer, Integer)
-    parseSign : List Char -> (Integer, List Char)
-    splitDot : List Char -> (List Char, List Char)
+    go : EvalState -> Integer
+    go (Done _ v) = v
+    go st = go (step st)
 
-    parseReal cs =
-      let (sign, rest) = parseSign cs
-          (intChars, fracChars) = splitDot rest
-      in case readInteger (pack intChars) of
-           Nothing => Nothing
-           Just i =>
-             case fracChars of
-               [] =>
-                 Just (sign * i, 0)
+------------------------------------------------------------
+-- REST
+------------------------------------------------------------
 
-               xs =>
-                 case readInteger (pack xs) of
-                   Nothing => Nothing
-                   Just f  => Just (sign * i, f)
+findLabel : Identifier -> List Stmt -> Nat -> Maybe Nat
+findLabel _ [] _ = Nothing
 
-    parseSign ('-' :: xs) = (-1, xs)
-    parseSign ('+' :: xs) = (1, xs)
-    parseSign xs = (1, xs)
+findLabel name (StmtLabel l :: xs) i =
+  if name == l then Just i
+  else findLabel name xs (i + 1)
 
-    splitDot [] = ([], [])
-    splitDot ('.' :: xs) = ([], xs)
-    splitDot (x :: xs) =
-      let (l, r) = splitDot xs
-      in (x :: l, r)
--- evalExpr env ft (RConst ty v) =
---   case ty of
---     TypeInt    => VInt (cast v)
---     TypeBool   => VBool (cast v)
---     TypeReal   => VReal (cast v)
---     TypeString => VString (cast v)
---     _          => VUnit
+findLabel name (_ :: xs) i =
+  findLabel name xs (i + 1)
 
-evalExpr env ft (RVar _ id) =
-  case lookupVal id env of
-    Just v  => v
-    Nothing => VUnit
-
-evalExpr env ft (ROp _ op args) =
-  case (op, args) of
-    (Add, [a, b]) =>
-      case (evalExpr env ft a, evalExpr env ft b) of
-        (VInt x, VInt y) => VInt (x + y)
-        _                => VUnit
-
-    (Sub, [a, b]) =>
-      case (evalExpr env ft a, evalExpr env ft b) of
-        (VInt x, VInt y) => VInt (x - y)
-        _                => VUnit
-
-    (Mul, [a, b]) =>
-      case (evalExpr env ft a, evalExpr env ft b) of
-        (VInt x, VInt y) => VInt (x * y)
-        _                => VUnit
-
-    (Div, [a, b]) =>
-      case (evalExpr env ft a, evalExpr env ft b) of
-        (VInt x, VInt y) => VInt (x `div` y)
-        _                => VUnit
-
-    (Equal, [a, b]) =>
-      let v1 = evalExpr env ft a
-          v2 = evalExpr env ft b
-      in VBool (v1 == v2)
-
-    (Less, [a, b]) =>
-      case (evalExpr env ft a, evalExpr env ft b) of
-        (VInt x, VInt y) => VBool (x < y)
-        _                => VUnit
-
-    _ =>
-      VUnit
--- evalExpr env ft (ROp _ op args) =
---   case (op, args) of
---     (Add, [a, b]) =>
---       let VInt x = evalExpr env ft a
---           VInt y = evalExpr env ft b
---       in VInt (x + y)
+-- exec : List Stmt -> Env -> Nat -> IO ()
+-- exec code env pc = do
+--   -- putStrLn ("PC = " ++ show pc)
 --
---     (Sub, [a, b]) =>
---       let VInt x = evalExpr env ft a
---           VInt y = evalExpr env ft b
---       in VInt (x - y)
+--   if pc >= length code
+--     then do
+--     -- putStrLn "HALT (pc out of bounds)"
+--     pure ()
+--     else
+--       case getAt pc code of
 --
---     (Mul, [a, b]) =>
---       let VInt x = evalExpr env ft a
---           VInt y = evalExpr env ft b
---       in VInt (x * y)
+--         Nothing => do
+--           -- putStrLn "HALT (Nothing at pc)"
+--           pure ()
 --
---     (Div, [a, b]) =>
---       let VInt x = evalExpr env ft a
---           VInt y = evalExpr env ft b
---       in VInt (x `div` y)
+--         Just stmt => do
+--           -- putStrLn ("STM = " ++ show stmt)
 --
---     (Equal, [a, b]) =>
---       let v1 = evalExpr env ft a
---           v2 = evalExpr env ft b
---       in VBool (v1 == v2)
+--           case stmt of
 --
---     (Less, [a, b]) =>
---       let VInt x = evalExpr env ft a
---           VInt y = evalExpr env ft b
---       in VBool (x < y)
+--             StmtAssign x e => do
+--               let v = eval env e
+--               -- putStrLn ("ASSIGN " ++ x ++ " = " ++ show v)
+--               let env' = setVar x v env
+--               exec code env' (pc + 1)
 --
---     _ =>
---       VUnit
-
-evalExpr env ft (RCall _ fid args) =
-  case lookupFn fid ft of
-    Just (MkFn params body) =>
-      let argVals = map (evalExpr env ft) args
-
-          fnEnv =
-            foldl
-              (\e, (pid, v) => insertVal pid v e)
-              (MkRTEnv (Just env) empty)
-              (zip params argVals)
-
-      in case execStmt fnEnv ft body of
-           Normal _   => VUnit
-           Return v _ => v
-
-    Nothing =>
-      case fid of
-        0 =>
-          case args of
-            [x] =>
-              let v = evalExpr env ft x in
-              let _ = trace (show v) () in
-              VUnit
-
-            _ =>
-              VUnit
-
-        _ =>
-          VUnit
--- evalExpr env ft (RCall _ fid args) =
---   case lookupFn fid ft of
---     Nothing => VUnit
+--             StmtPrint e => do
+--               let v = eval env e
+--               -- putStrLn ("PRINT = " ++ show v)
+--               printLn (pack . filter ('"' /=) . unpack . show $ v)
+--               exec code env (pc + 1)
 --
---     Just (MkFn params body) =>
---       let argVals = map (evalExpr env ft) args
+--             StmtLabel l => do
+--               -- putStrLn ("LABEL " ++ l)
+--               exec code env (pc + 1)
 --
---           fnEnv =
---             foldl
---               (\e, (pid, v) => insertVal pid v e)
---               (MkRTEnv (Just env) empty)
---               (zip params argVals)
+--             StmtIf cond label => do
+--               let v = eval env cond
+--               -- putStrLn ("IF cond = " ++ show v ++ " goto " ++ label)
 --
---       in case execStmt fnEnv ft body of
---            Normal _       => VUnit
---            Return v _     => v
+--               if v /= 0 then
+--                 case findLabel label code 0 of
+--                   Just target => do
+--                     -- putStrLn ("JUMP to " ++ show target)
+--                     exec code env target
+--
+--                   Nothing => do
+--                     -- putStrLn ("LABEL NOT FOUND: " ++ label)
+--                     exec code env (pc + 1)
+--                 else do
+--                   -- putStrLn "IF FALSE"
+--                   exec code env (pc + 1)
+--
+--             StmtGoto label => do
+--               -- putStrLn ("GOTO " ++ label)
+--
+--               case findLabel label code 0 of
+--                 Just target => do
+--                   -- putStrLn ("JUMP to " ++ show target)
+--                   exec code env target
+--
+--                 Nothing => do
+--                   -- putStrLn ("LABEL NOT FOUND: " ++ label)
+--                   exec code env (pc + 1)
 
-loop : RTEnv -> FunctionTable -> ResolvedExpr -> ResolvedStmt -> ExecResult
-loop env' ft cond body =
-  case evalExpr env' ft cond of
-    VBool True =>
-      case execStmt env' ft body of
-        Normal env'' => loop env'' ft cond body
-        Return v e   => Return v e
-    _ => Normal env'
+exec : List Stmt -> Env -> Nat -> IO ()
+exec code env pc = do
+  -- putStrLn ("PC = " ++ show pc)
 
-execStmt env ft (RExpr e) =
-  Normal env
+  if pc >= length code
+    then do
+    -- putStrLn "HALT (pc out of bounds)"
+    pure ()
+    else
+      case getAt pc code of
 
-execStmt env ft (RLet id _ expr) =
-  let v = evalExpr env ft expr
-  in Normal (insertVal id v env)
+        Nothing => do
+          -- putStrLn "HALT (Nothing at pc)"
+          pure ()
 
-execStmt env ft (RAssign id expr) =
-  let v = evalExpr env ft expr
-  in Normal (updateVal id v env)
+        Just stmt => do
+          -- putStrLn ("STM = " ++ show stmt)
 
-execStmt env ft (RBlock _ stmts) =
-  execStmtList env ft stmts
+          case stmt of
+            StmtAssign x e => do
+              let v = runExpr env e
+              -- putStrLn ("ASSIGN " ++ x ++ " = " ++ show v)
+              let env' = setVar x v env
+              exec code env' (pc + 1)
 
-execStmt env ft (RIf cond body) =
-  case evalExpr env ft cond of
-    VBool True  => execStmt env ft body
-    VBool False => Normal env
-    _           => Normal env
+            StmtPrint e => do
+              let v = runExpr env e
+              -- putStrLn ("PRINT = " ++ show v)
+              printLn (pack . filter ('"' /=) . unpack . show $ v)
+              exec code env (pc + 1)
 
-execStmt env ft (RWhile cond body) = loop env ft cond body
+            StmtLabel l => do
+              -- putStrLn ("LABEL " ++ l)
+              exec code env (pc + 1)
 
-execStmt env ft (RReturn Nothing) =
-  Return VUnit env
+            StmtIf cond label => do
+              let v = runExpr env cond
+              -- putStrLn ("IF cond = " ++ show v ++ " goto " ++ label)
 
-execStmt env ft (RReturn (Just e)) =
-  Return (evalExpr env ft e) env
+              if v /= 0 then
+                case findLabel label code 0 of
+                  Just target => do
+                    -- putStrLn ("JUMP to " ++ show target)
+                    exec code env target
 
-execStmt env ft RBreak =
-  Normal env
+                  Nothing => do
+                    -- putStrLn ("LABEL NOT FOUND: " ++ label)
+                    exec code env (pc + 1)
+                else do
+                  -- putStrLn "IF FALSE"
+                  exec code env (pc + 1)
 
-execStmt env ft (RFunc _ _ _ _) =
-  Normal env
+            StmtGoto label => do
+              -- putStrLn ("GOTO " ++ label)
 
-execStmtList env ft [] = Normal env
+              case findLabel label code 0 of
+                Just target => do
+                  -- putStrLn ("JUMP to " ++ show target)
+                  exec code env target
 
-execStmtList env ft (s :: ss) =
-  case execStmt env ft s of
-    Normal env' =>
-      execStmtList env' ft ss
-
-    r@(Return _ _) =>
-      r
+                Nothing => do
+                  -- putStrLn ("LABEL NOT FOUND: " ++ label)
+                  exec code env (pc + 1)

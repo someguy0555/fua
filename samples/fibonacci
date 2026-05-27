@@ -1,0 +1,24 @@
+n = 1000
+curr = 0
+
+a = 0
+b = 1
+c = 1
+
+repeat:
+    if curr > 1 goto skip
+
+    to_print = curr
+    goto prnt
+
+    skip:
+    c = a + b
+    a = b
+    b = c
+    to_print = c
+
+    prnt:
+    print to_print
+    curr = curr + 1
+
+if curr <= n goto repeat

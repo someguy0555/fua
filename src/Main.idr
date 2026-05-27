@@ -1,5 +1,6 @@
 module Main
 
+-- import System.Random
 import Data.List
 import Data.SortedMap
 import Data.List
@@ -9,859 +10,93 @@ import Data.Either
 import Control.Monad.Error.Either
 
 import Debug.Trace
+import System
 import System.File
 
 import Parser
 import Lexer
 import Expr
 import Stmt
-import Resolved
-import TypeChecking
+import Resolve
 import Interpreter
+import Utility
+import Theorem
 
-parseCode : String -> Either ErrorMsg Stmt
+parseCode : String -> Either ErrorMsg Expr
 parseCode src =
+  case parseText lexer src of
+    (_, Left lexErr) => Left lexErr
+    (_, Right toks) =>
+      case parse (parseExpr) toks of
+        (tokan, Left lf) => Left lf
+        (tokan, Right e) => Right e
+
+parseProgram : String -> Either ErrorMsg (List Stmt)
+parseProgram src =
   case parseText lexer src of
     (_, Left lexErr) =>
       Left lexErr
 
     (_, Right toks) =>
-      case parse parseProgram toks of
-        (_, Left parseErr) =>
+      case parse parseStmtList toks of
+        (remaining, Left parseErr) =>
           Left parseErr
 
-        (_, Right ast) =>
-          Right ast
+        ([], Right stmts) =>
+          Right stmts
 
--- typeCheckStmt : Env -> ExprType -> ResolvedStmt -> Either ErrorMsg ()
-parseAndResolveCode : String -> Either ErrorMsg (Env, ResolvedStmt)
-parseAndResolveCode src =
-  case parseCode src of
-    Right stmt => resolveStmt (MkEnv Nothing 0 empty) stmt
-    Left e => Left e
+        (remaining, Right stmts) =>
+          Left
+            [ "Unconsumed tokens: " ++ show remaining ]
 
-typeCheckProgram : ResolvedStmt -> Either ErrorMsg ()
-typeCheckProgram (RBlock env stmts) =
-  traverse_ (typeCheckStmt env TypeNil) stmts
+runProgram : List Stmt -> IO ()
+runProgram stmts =
+  case checkProgram stmts of
+    Left err => printLn err
+    Right env =>
+      do
+        -- printLn $ "stmts: " ++ show stmts
+        -- printLn env
+        -- printLn "Program check successful"
+        final <- exec stmts env 0
+        pure ()
 
-typeCheckProgram stmt =
-  typeCheckStmt emptyEnv TypeNil stmt
+execProgram : String -> IO ()
+execProgram src = do
+  case parseText lexer src of
+    (_, Left err) => printLn err
 
-parseResolveTypecheck : String -> IO ()
-parseResolveTypecheck code = 
-  case parseAndResolveCode code of
-    Left err =>
-      printLn err
+    (_, Right tokens) =>
+      case parse parseStmtList tokens of
+        (_, Left perr) => printLn perr
 
-    Right (_, resolved) =>
-      case typeCheckProgram resolved of
-        Left err =>
-          printLn ("Type error: " ++ show err)
-        Right _ =>
-          printLn "Program is valid"
+        (_, Right stmts) => do
+          -- printLn $ "Why does this not work? "
+          -- printLn $ show src
+          _ <- runProgram stmts
+          pure ()
 
-execProgram : FunctionTable -> ResolvedStmt -> Value
-execProgram ft stmt =
-  case execStmt (MkRTEnv Nothing empty) ft stmt of
-    Normal _     => VUnit
-    Return v _   => v
+execFile : String -> IO ()
+execFile path =
+  do
+    res <- readFile path
+    case res of
+      Left err =>
+        do
+          printLn ("File error: " ++ show err)
+      Right content =>
+        do
+          _ <- execProgram content
+          pure ()
 
-execProgram' : String -> Value
-execProgram' code = 
-  case parseAndResolveCode code of
-    Left err => VUnit
-    Right (_, resolved) =>
-      case typeCheckProgram resolved of
-        Left err => VUnit
-        Right _ => execProgram empty resolved
+main : IO ()
+main =
+  do
+    args <- getArgs
 
--- processProgram : String -> Either ErrorMsg ()
--- processProgram src =
---   do
---     (env, resolved) <- parseAndResolveCode src
---     let cs = collectStmt env resolved []
---     solve cs
+    case args of
+      (_ :: path :: _) =>
+        execFile path
 
-code00 = """
-let x : Int = 10
-let y : String = 20
-x = x + y
-print(x)
-"""
-
-code01 = """
-if true {
-  let x : Int = 100
-}
-"""
-
-code02 = """
-while i < 10 {
-  i = i + 1
-}
-"""
-
-code03 = """
-fn add(a : Int, b : Int) : Int {
-  return a + b
-}
-"""
-
-{-
-Left
-[
-  "Unexpected tokens at end of program:
-  [
-    { token = FN, line = 0, column = 0},
-    { token = IDENTIFIER \"hello\", line = 0, column = 3},
-    { token = LEFT_PAREN, line = 0, column = 8},
-    { token = IDENTIFIER \"name\", line = 0, column = 9},
-    { token = RIGHT_PAREN, line = 0, column = 13},
-    { token = LEFT_BRACE, line = 0, column = 15},
-    { token = NEWLINE, line = 0, column = 16},
-    { token = PRINT, line = 1, column = 2},
-    { token = LEFT_PAREN, line = 1, column = 7},
-    { token = IDENTIFIER \"name\", line = 1, column = 8},
-    { token = RIGHT_PAREN, line = 1, column = 12},
-    { token = NEWLINE, line = 1, column = 13},
-    { token = RIGHT_BRACE, line = 2, column = 0}
-  ]"
-]
--}
-code04 = """
-fn hello(name) {
-  print(name)
-}
-"""
-
-code05 = """
-fn factorial(n : Int) : Int {
-  if n == 0 {
-    return 1
-  }
-
-  return n * factorial(n - 1)
-}
-"""
-
-code06 = """
-{
-  let x = 10
-
-  {
-    let y = 20
-    x = x + y
-  }
-}
-"""
-
-code07 = """
-fn loop() {
-  while true {
-    break
-  }
-}
-"""
-
-code08 = """
-fn math(a, b, c : Int) : Int {
-  let result = a * b + c
-  return result
-}
-"""
-
-code09 = """
-fn add(a, b) { return a + b }
-fn print(a) { return }
-
-fn main() {
-  let x : Int = 10
-  let y : Int = 20
-
-  if x < y {
-    print(add(x))
-  }
-}
-"""
-
-code10 = """
-let a = 2
-let b : Bool = True
-
-return a + b
-"""
-
-code11 = """
-fn add(a: Int, b: Int) : Int {
-  return a + b
-}
-
-fn badAdd(a: Int, b: Int) : Int {
-  let x : Int = a + b
-  let y : Bool = (a + b == 10)
-
-  let z : Int = x + y
-
-  return z
-}
-"""
-
-hmm = """
-fn shadowTest(x: Int) : Int {
-  let x : Int = 10
-  let y : Int = x + 1
-  return y
-}
-
-fn callTest(a: Int) : Int {
-  let b : Int = add(a, 10)
-  let c : Int = add(b, add(a, 1))
-  return c
-}
-
-fn badCall(a: Int) : Int {
-  // wrong arity
-  return add(a)
-}
-
-fn compareTest(a: Int, b: Int) : Bool {
-  let x : Bool = a < b
-  let y : Bool = a == b
-  return x
-}
-
-fn controlFlowTest(a: Int) : Int {
-  if a < 10 {
-    return a
-  }
-
-  while a < 100 {
-    a = a + 1
-  }
-
-  return a
-}
-"""
-
-codeLs : List String
-codeLs = [
-    code00,
-    code01,
-    code02,
-    code03,
-    code04,
-    code05,
-    code06,
-    code07,
-    code08,
-    code09
-  ]
-
-tokens01 : List Token
-tokens01 = [
-    MkToken WHILE 0 0,
-    MkToken (IDENTIFIER "i") 0 6,
-    MkToken LESS 0 8,
-    MkToken (INTEGER 100) 0 10,
-    MkToken LEFT_BRACE 0 14,
-    MkToken NEWLINE 0 15,
-    MkToken (IDENTIFIER "i") 1 2,
-    MkToken EQUAL 1 4,
-    MkToken (IDENTIFIER "i") 1 6,
-    MkToken PLUS 1 8,
-    MkToken (INTEGER 1) 1 10,
-    MkToken NEWLINE 1 12,
-    MkToken RIGHT_BRACE 2 0,
-    MkToken NEWLINE 2 1,
-    MkToken (IDENTIFIER "i") 3 0,
-    MkToken EQUAL 3 2,
-    MkToken (INTEGER 10) 3 4,
-    MkToken NEWLINE 3 6,
-    MkToken WHILE 4 0,
-    MkToken (IDENTIFIER "i") 4 6,
-    MkToken EQUAL_EQUAL 4 8,
-    MkToken (INTEGER 10) 4 11,
-    MkToken LEFT_BRACE 4 14,
-    MkToken IF 4 16,
-    MkToken (IDENTIFIER "i") 4 19,
-    MkToken EQUAL_EQUAL 4 21,
-    MkToken (INTEGER 10) 4 24,
-    MkToken LEFT_BRACE 4 27,
-    MkToken BREAK 4 29,
-    MkToken RIGHT_BRACE 4 35,
-    MkToken RIGHT_BRACE 4 37
-  ]
-
-test00 = parseCode code00
-test01 = parseCode code01
-test02 = parseCode code02
-test03 = parseCode code03
-test04 = parseCode code04
-test05 = parseCode code05
-test06 = parseCode code06
-test07 = parseCode code07
-test08 = parseCode code08
-test09 = parseCode code09
-
--- stmts01 : List Stmt
--- stmts01 = [
---     StmtWhile
---     (ExprOperator TypeUnknown Less [ ExprVariable TypeUnknown "i", ExprOperand TypeInt 100 ])
---     [
---       StmtAssign "i"
---       (ExprOperator TypeUnknown Add [ ExprVariable TypeUnknown "i", ExprOperand TypeInt 1 ])
---     ]
---     ,
---     StmtAssign "i"
---     (ExprOperand TypeInt 10)
---     ,
---     StmtWhile
---     (ExprOperator TypeUnknown Equal [ ExprVariable TypeUnknown "i", ExprOperand TypeInt 10 ])
---     [
---       StmtIf
---       (ExprOperator TypeUnknown Equal [ ExprVariable TypeUnknown "i", ExprOperand TypeInt 10 ])
---       [
---         StmtBreak
---       ]
---     ]
---  ]
-
-stmts01 : (List Token, Either ErrorMsg ( List Stmt ))
-stmts01 = parse (parseStmts) tokens01
-
--- main : IO ()
--- main =
---   do
---     let path = "lexer-test.txt"
---     str <- readFile path
---     case str of
---       Left  e1 => print e1
---       Right t1 =>
---         case scan t1 of
---           Left  e2 => print e2
---           Right (st,t2) => print t2
-
--- parseKeyword' : TokenType -> List Char -> Parser Token
--- parseKeyword' _  [] = left "Can't parse empty string"
--- parseKeyword' tt (h::[]) = 
---   do
---    MkParserState input line column <- lift get
---    case unpack input of
---        [] => left "No character found"
---        (h2::t) =>
---          if h == h2
---            then do
---              lift . put $ MkParserState ( pack t ) line ( column + 1 )
---              pure $ MkToken line ( column + 1 ) tt
---            else left $ "Character '" ++ show h2 ++ "' is not alpha"
---
--- parseKeyword' tt (h::t) = parseChar h <*> ( parseKeyword' tt t )
---
--- parseKeyword : TokenType -> String -> Parser Token
--- parseKeyword tt = parseKeyword' tt . unpack
-
--- newtype Parser a = Parser
---   { runParser :: String -> Either String (a, String)
---   }
---
--- instance (Show a) => Show (Parser a) where
---   show p = show (runParser p "")
---
--- -- Parser Functor, Applicative and Alternative
--- instance Functor Parser where
---   fmap f functor = Parser $ \input ->
---     case runParser functor input of
---       Left e -> Left e
---       Right (v, r) -> Right (f v, r)
---
--- instance Applicative Parser where
---   pure a = Parser $ \input -> Right (a, input)
---   af <*> aa = Parser $ \input ->
---     case runParser af input of
---       Left e1 -> Left e1
---       Right (f, r1) ->
---         case runParser aa r1 of
---           Left e2 -> Left e2
---           Right (a, r2) -> Right (f a, r2)
---
--- instance Alternative Parser where
---   empty = Parser $ \_ -> Left "No alternatives"
---   p1 <|> p2 = Parser $ \input ->
---     case runParser p1 input of
---       Right r2 -> Right r2
---       Left e1 ->
---         case runParser p2 input of
---           Right r2 -> Right r2
---           Left e2 -> Left $ e1 ++ "; " ++ e2
-
--- -- Utility functions
--- modifyLast : (a -> a) -> List a -> List a
--- modifyLast f [] = []
--- modifyLast f (x :: []) = f x :: []
--- modifyLast f (x :: (y :: xs)) = x :: (modifyLast f (y::xs))
---
--- digitToInt : Char -> Maybe Int
--- digitToInt '0' = Just 0
--- digitToInt '1' = Just 1
--- digitToInt '2' = Just 2
--- digitToInt '3' = Just 3
--- digitToInt '4' = Just 4
--- digitToInt '5' = Just 5
--- digitToInt '6' = Just 6
--- digitToInt '7' = Just 7
--- digitToInt '8' = Just 8
--- digitToInt '9' = Just 9
--- digitToInt _   = Nothing
---
--- isIdentifier : Char -> Bool
--- isIdentifier ch =
---   if isSpace ch
---     then False
---     else
---       if isAlpha ch
---          then True
---          else case ch of
---            '_' => True
---            _   => False
---
--- data TokenType =
---   -- Single character tokens
---   LEFT_PAREN | RIGHT_PAREN | LEFT_BRACE | RIGHT_BRACE |
---   COMMA | DOT | SEMICOLON | PLUS | MINUS | SLASH | STAR | PERCENT |
---
---   -- One or two character tokens
---   BANG | BANG_EQUAL |
---   EQUAL | EQUAL_EQUAL |
---   GREATER | GREATER_EQUAL |
---   LESS | LESS_EQUAL |
---
---   -- Literals
---   IDENTIFIER String | STRING String | INTEGER Integer | NUMBER Integer |
---
---   -- Keywords
---   IF | ELSE | WHILE | FOR | IN |
---   RETURN | PRINT |
---   AND | OR |
---
---   EOF
---   ;
---
--- record Token where
---   constructor MkToken
---   line : Nat
---   column : Nat
---   token : TokenType
---
--- record ScannerError where
---   constructor MkScannerError
---   line : Nat
---   column : Nat
---   msg : String
---
--- record Cursor a where
---   constructor MkCursor
---   scanned : a
---   left : a
---
--- record ScannerState where
---   constructor MkScannerState
---   line : Nat
---   column : Nat
---   lines : Cursor (List String) -- lines above the current one, lines below the current one.
---   currLine : Cursor String     -- left of the cursor, right of the cursor
---   tokens : List Token
---
--- Show TokenType where
---   show (INTEGER i) = "{ " ++ "INTEGER: " ++ show i ++ " }"
---   show (STRING s) = "{ " ++ "STRING: " ++ show s ++ " }"
---   show (IDENTIFIER s) = "{ " ++ "IDENTIFIER: " ++ show s ++ " }"
---   show _ = "{ TOKENTYPE }"
---
--- Show Token where
---   show tk = "{" ++ show tk.line ++ ", " ++ show tk.column ++ ", " ++ show tk.token ++ "}"
---
--- Show ScannerError where
---   show se = "{" ++ show se.line ++ ", " ++ show se.column ++ ", " ++ se.msg ++ "}"
---
--- Show a => Show (Cursor a) where
---   show cur = show (cur.scanned, cur.left)
---
--- Show ScannerState where
---   show se = "{" ++ show se.line ++ ", " ++ show se.column ++ ", " ++ show se.lines ++ ", " ++ show se.currLine ++ ", " ++ show se.tokens ++ "}"
---
--- Parser : Type -> Type -> Type -> Type
--- Parser parserState parserError = StateT parserState (Either parserError)
---
--- Scanner : Type -> Type
--- Scanner = Parser ScannerState ScannerError
---
--- peekChar : Scanner $ Maybe Char
--- peekChar = do
---   state <- get
---   pure $ case unpack state.currLine.left of
---     [] =>
---       do
---         case state.lines.left of
---           [] => Nothing
---           left => do
---             let trueLeft = unpack $ concat left
---             case trueLeft of
---               [] => Nothing
---               x::_ => Just x
---     ch::_ => Just ch
---
--- -- There appear to be no bugs here.
--- advance : Scanner $ Maybe Char
--- advance =
---   do
---     state <- get
---     case unpack state.currLine.left of
---       [] =>
---         do
---           case state.lines.left of
---             [] => pure Nothing
---             ln::linesLeft =>
---               do
---                 put $ {
---                   line     := state.line + 1,
---                   column   := 0,
---                   lines    := MkCursor (state.lines.scanned ++ [state.currLine.scanned]) linesLeft,
---                   currLine := MkCursor "" ln
---                 } state
---                 advance
---       ch::newLeft =>
---         do
---           put $ {
---             column   := state.column + 1,
---             currLine := MkCursor (state.currLine.scanned ++ (pack [ch])) (pack newLeft)
---           } state
---           pure $ Just ch
---
--- -- There appear to be no bugs here.
--- back : Scanner $ Maybe Char
--- back =
---   do
---     state <- get
---     case unpack state.currLine.scanned of
---       [] =>
---         do
---           case state.lines.scanned of
---             [] => pure Nothing
---             linesScanned@(_::_) =>
---               do
---                 let lastScanned = last linesScanned
---                 let initScanned = init linesScanned
---                 put $ {
---                   line     := state.line `minus` 1,
---                   -- column   := length lastScanned,
---                   column   := length lastScanned `minus` 1,
---                   lines    := MkCursor initScanned $ (state.currLine.scanned ++ state.currLine.left) :: state.lines.left,
---                   currLine := MkCursor lastScanned ""
---                 } state
---                 st2 <- get
---                 back
---       lineScanned@(_::_) =>
---         do
---           let lastScanned = last lineScanned
---           let initScanned = pack $ init lineScanned
---           put $ {
---             column   := state.column `minus` 1,
---             currLine := MkCursor initScanned ((pack [lastScanned]) ++ state.currLine.left)
---           } state
---           pure $ Just lastScanned
---
--- match : Char -> Scanner Bool
--- match ch =
---   do
---     maybe <- peekChar 
---     pure $ case maybe of
---       Nothing => False
---       Just peeked => if ch == peeked then True else False
---
--- isAtLineEnd : Scanner Bool
--- isAtLineEnd =
---   do
---     state <- get
---     pure $ case unpack state.currLine.left of
---       [] => False
---       _  => True
---
--- addToken : TokenType -> Scanner ()
--- addToken tt =
---   do
---     state <- get
---     put $ {
---       tokens := state.tokens ++ [MkToken state.line state.column tt]
---     } state
---
--- appendStringToTokenString : TokenType -> String -> TokenType
--- appendStringToTokenString (STRING str) app = STRING $ str ++ app
--- appendStringToTokenString _ app = STRING app 
---
--- appendExistingInteger : TokenType -> Integer -> TokenType
--- appendExistingInteger (INTEGER intg) i = INTEGER $ intg * 10 + i
--- appendExistingInteger _ i = INTEGER i
---
--- appendExistingIdentifier : TokenType -> String -> TokenType
--- appendExistingIdentifier (IDENTIFIER str) app = IDENTIFIER $ str ++ app
--- appendExistingIdentifier _ app = IDENTIFIER app 
---
--- readStringLiteral : Scanner ()
--- readStringLiteral =
---   do
---     c <- advance
---     state <- get
---     case c of
---       Nothing => pure ()
---       -- Nothing => lift . Left $ MkScannerError state.line state.column "Unable to find string literal"
---       Just '"' => do
---         put $ { tokens := state.tokens ++ [ MkToken state.line state.column (STRING "") ] } state
---         readStringLiteral'
---       Just _ => pure ()
---   where
---     readStringLiteral' : Scanner ()
---     readStringLiteral' =
---       do
---         mc <- advance
---         state <- get
---         case mc of
---           Nothing => lift . Left $ MkScannerError state.line state.column "Unterminated string"
---           Just c  =>
---             do
---               case c of
---                 '\\' => do
---                   matches <- match '\\'
---                   case matches of
---                     True =>
---                       do
---                         _ <- advance
---                         state <- get
---                         put $ {
---                           tokens := modifyLast (\tk => { token := appendStringToTokenString tk.token "\\" } tk) state.tokens
---                         } state
---                         readStringLiteral'
---                     False => do
---                       matches <- match '"'
---                       case matches of
---                         True =>
---                           do
---                             _ <- advance
---                             state <- get
---                             -- put $ { tokens := (\tk => appendStringToTokenString tk "\"" ) state.tokens } state
---                             put $ {
---                               tokens := modifyLast (\tk => { token := appendStringToTokenString tk.token "\"" } tk) state.tokens
---                             } state
---                             readStringLiteral'
---                         False => readStringLiteral'
---                 '"' => pure ()
---                 c =>
---                   do
---                     -- put $ { tokens := (\tk => appendStringToTokenString tk (show c) ) state.tokens } state
---                     put $ {
---                       tokens := modifyLast (\tk => { token := appendStringToTokenString tk.token (pack [c]) } tk) state.tokens
---                     } state
---                     readStringLiteral'
---
--- readIntegerLiteral : Scanner ()
--- readIntegerLiteral =
---   do
---     mc <- advance
---     case mc of
---       Nothing => pure ()
---       Just c => case digitToInt c of
---         Nothing => pure ()
---         Just d => do
---           state <- get
---           put $ {
---             tokens := state.tokens ++ [ MkToken state.line state.column (INTEGER (the Integer $ cast d)) ]
---           } state
---           readIntegerLiteral'
---   where
---     readIntegerLiteral' : Scanner ()
---     readIntegerLiteral' =
---       do
---         mc <- peekChar
---         case mc of
---           Nothing => pure ()
---           Just c => case digitToInt c of
---             Nothing => pure ()
---             Just d => do
---               _ <- advance
---               state <- get
---               put $ {
---                 tokens := modifyLast (\tk => { token := appendExistingInteger tk.token (the Integer $ cast d) } tk) state.tokens
---               } state
---               readIntegerLiteral'
---
--- readIdentifier : Scanner ()
--- readIdentifier =
---   do
---     mc <- advance
---     case mc of
---       Nothing => pure ()
---       Just c =>
---         if isIdentifier c
---           then do
---             state <- get
---             put $ {
---               tokens := state.tokens ++ [ MkToken state.line state.column (IDENTIFIER (pack [c])) ]
---             } state
---             readIdentifier'
---           else pure ()
---   where
---     readIdentifier' : Scanner ()
---     readIdentifier' =
---       do
---         mc <- peekChar
---         case mc of
---              Nothing => pure ()
---              Just c => if isIdentifier c
---                then
---                  do
---                    _ <- advance
---                    state <- get
---                    put $ {
---                      tokens := modifyLast (\tk => { token := appendExistingIdentifier tk.token (pack [c]) } tk) state.tokens
---                    } state
---                    readIdentifier'
---                else pure ()
---
--- -- readKeyword : String -> Scanner ()
--- -- readKeyword str =
--- --   do
--- --     mc <- ad
---
--- scan' : Scanner $ List Token
--- scan' =
---   do
---     state <- get
---     c <- advance
---     case c of
---       Nothing => pure state.tokens
---       Just c => case c of
---         '!' =>
---           do
---             r <- match '='
---             case r of
---               False => do
---                 addToken BANG
---                 scan'
---               True => do
---                 _ <- advance
---                 addToken BANG_EQUAL
---                 scan'
---         '=' =>
---           do
---             r <- match '='
---             case r of
---               False => do
---                 addToken EQUAL
---                 scan'
---               True => do
---                 _ <- advance
---                 addToken EQUAL_EQUAL
---                 scan'
---         '<' =>
---           do
---             r <- match '='
---             case r of
---               False => do
---                 addToken LESS
---                 scan'
---               True => do
---                 _ <- advance
---                 addToken LESS_EQUAL
---                 scan'
---         '>' =>
---           do
---             r <- match '='
---             case r of
---               False => do
---                 addToken GREATER
---                 scan'
---               True => do
---                 _ <- advance
---                 addToken GREATER_EQUAL
---                 scan'
---         '(' => do
---           addToken LEFT_PAREN
---           scan'
---         ')' => do
---           addToken RIGHT_PAREN
---           scan'
---         '{' => do
---           addToken LEFT_BRACE
---           scan'
---         '}' => do
---           addToken RIGHT_BRACE
---           scan'
---         ',' => do
---           addToken COMMA
---           scan'
---         '.' => do
---           addToken DOT
---           scan'
---         ';' => do
---           addToken SEMICOLON
---           scan'
---         '+' => do
---           addToken PLUS
---           scan'
---         '-' => do
---           addToken MINUS
---           scan'
---         '*' => do
---           addToken STAR
---           scan'
---         '/' => do
---           addToken SLASH
---           scan'
---         '%' => do
---           addToken PERCENT
---           scan'
---         ' '  => scan'
---         '\r' => scan'
---         '\t' => scan'
---         '"' => do
---           _ <- back
---           _ <- readStringLiteral
---           scan'
---         ch => do
---           if isDigit ch
---              then do
---                _ <- back
---                _ <- readIntegerLiteral
---                scan'
---              else do
---                if isIdentifier ch
---                   then do
---                     _ <- back
---                     _ <- readIdentifier
---                     scan'
---                   else lift . Left $ MkScannerError state.line state.column "Unexpected symbol"
---
--- scan : String -> Either ScannerError (ScannerState, List Token)
--- scan code = runStateT (MkScannerState 0 0 allLines (MkCursor "" currLine) []) scan'
---   where
---     currLine : String
---     currLine =
---       case Data.String.lines code of
---         []   => ""
---         x::_ => x
---     allLines : Cursor $ List String
---     allLines =
---       case lines code of
---         []    => MkCursor [] []
---         x::xs => MkCursor [] xs
---
--- main : IO ()
--- main =
---   do
---     let path = "lexer-test.txt"
---     str <- readFile path
---     case str of
---       Left  e1 => print e1
---       Right t1 =>
---         case scan t1 of
---           Left  e2 => print e2
---           Right (st,t2) => print t2
+      _ =>
+        printLn "Usage: program <file>"

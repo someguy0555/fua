@@ -12,7 +12,7 @@ import Parser
 import Lexer
 
 isLineEnd : TokenType -> Bool
-isLineEnd tt = tt == NEWLINE || tt == SEMICOLON
+isLineEnd tt = tt == NEWLINE
 
 tokenTypeIs : TokenType -> Token -> Bool
 tokenTypeIs tt (MkToken tok _ _) = tt == tok
@@ -20,26 +20,6 @@ tokenTypeIs tt (MkToken tok _ _) = tt == tok
 isIntegerToken : Token -> Bool
 isIntegerToken (MkToken (INTEGER _) _ _) = True
 isIntegerToken _ = False
-
-isRealNumberToken : Token -> Bool
-isRealNumberToken (MkToken (NUMBER  _) _ _) = True
-isRealNumberToken _ = False
-
-isNumber : Token -> Bool
-isNumber tk = isIntegerToken tk || isRealNumberToken tk
-
-isBooleanLiteral : Token -> Bool
-isBooleanLiteral (MkToken TRUE  _ _) = True
-isBooleanLiteral (MkToken FALSE _ _) = True
-isBooleanLiteral _ = False
-
-isNilLiteral     : Token -> Bool
-isNilLiteral (MkToken NILV _ _) = True
-isNilLiteral _ = False
-
-isStringLiteral : Token -> Bool
-isStringLiteral (MkToken (STRING  _) _ _) = True
-isStringLiteral _ = False
 
 isIdentifier : Token -> Bool
 isIdentifier (MkToken (IDENTIFIER _) _ _) = True
@@ -62,11 +42,7 @@ parseToken predicate =
 parseLineEnd : Parser (List Token) ()
 parseLineEnd =
   do
-    _ <- (
-      parseToken (tokenTypeIs NEWLINE)
-      <|>
-      parseToken (tokenTypeIs SEMICOLON)
-      )
+    _ <- parseToken (tokenTypeIs NEWLINE)
     pure ()
 
 digitToInt : Char -> Maybe Int
@@ -81,19 +57,6 @@ digitToInt '7' = Just 7
 digitToInt '8' = Just 8
 digitToInt '9' = Just 9
 digitToInt _   = Nothing
-
--- readInteger : String -> Maybe Integer
--- readInteger str =
---   let
---     lsCh = unpack str
---     mapped = sequence $ (digitToInt) <$> lsCh
---     packInteger : Integer -> List Int -> Integer
---     packInteger int [] = int
---     packInteger int (x::xs) = packInteger ( int * 10 + (cast x) ) xs
---   in
---     case mapped of
---       Nothing => Nothing
---       Just lsInt => Just (packInteger 0 lsInt)
 
 readInteger : String -> Maybe Integer
 readInteger str =
@@ -118,3 +81,7 @@ readInteger str =
       Nothing => Nothing
       Just lsInt =>
         Just (cast sign * packInteger 0 lsInt)
+
+predNat : Nat -> Nat
+predNat Z = Z
+predNat (S k) = k

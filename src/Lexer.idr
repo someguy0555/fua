@@ -21,60 +21,73 @@ record LexerState where
 
 mkDummyLexerState input = MkLexerState input 0 0
 
--- This is a very temporary solution to the problem
--- It should be replaced with something else,
--- probably a foreign library.
-data RealNumber = MkRealNumber Integer Integer
-Show RealNumber where
-  show (MkRealNumber a b) = show a ++ "." ++ show b
-Eq RealNumber where
-  (==) (MkRealNumber n1a n1b) (MkRealNumber n2a n2b) = n1a == n2a && n1b == n2b
-
 data TokenType =
   -- Single character tokens
-  LEFT_PAREN | RIGHT_PAREN | LEFT_BRACE | RIGHT_BRACE | LEFT_SQUARE | RIGHT_SQUARE |
-  COMMA | COLON | SEMICOLON | PLUS | MINUS | SLASH | STAR | PERCENT |
+  LEFT_PAREN | RIGHT_PAREN |
+  COLON | PLUS | MINUS | SLASH | STAR | PERCENT |
+  AMPERSAND | PIPE |
 
   -- One or two character tokens
   BANG | BANG_EQUAL |
   EQUAL | EQUAL_EQUAL |
   GREATER | GREATER_EQUAL |
   LESS | LESS_EQUAL |
-  DOT | DOT_DOT |
 
-  -- Literals
-  IDENTIFIER String | STRING String | INTEGER Integer | NUMBER RealNumber |
+  IDENTIFIER String | INTEGER Integer |
 
   -- Keywords
-  IF | ELSE | WHILE | FOR | IN |
-  FN | RETURN | -- PRINT |
-  AND | OR |
-  LET | CONST |
-  NILT | BOOL | INT | REAL | STRINGT | -- Types
-  NILV | TRUE | FALSE | -- Values
-  BREAK |
+  IF | THEN | GOTO | PRINT |
 
   NEWLINE |
 
   EOF
   ;
 
--- This is so unbelievably ass..
+Show TokenType where
+  show LEFT_PAREN = "("
+  show RIGHT_PAREN = ")"
+  show COLON = ":"
+  show PLUS = "+"
+  show MINUS = "-"
+  show SLASH = "/"
+  show STAR = "*"
+  show PERCENT = "%"
+  show AMPERSAND = "&"
+  show PIPE = "|"
+
+  show BANG = "!"
+  show BANG_EQUAL = "!="
+  show EQUAL = "="
+  show EQUAL_EQUAL = "=="
+  show GREATER = ">"
+  show GREATER_EQUAL = ">="
+  show LESS = "<"
+  show LESS_EQUAL = "<="
+
+  show (IDENTIFIER s) = "IDENTIFIER(" ++ s ++ ")"
+  show (INTEGER n) = "INTEGER(" ++ show n ++ ")"
+
+  show IF = "if"
+  show THEN = "then"
+  show GOTO = "goto"
+  show PRINT = "print"
+
+  show NEWLINE = "\\n"
+  show EOF = "EOF"
+
 Eq TokenType where
   (==) LEFT_PAREN LEFT_PAREN = True
   (==) RIGHT_PAREN RIGHT_PAREN = True
-  (==) LEFT_BRACE LEFT_BRACE = True
-  (==) RIGHT_BRACE RIGHT_BRACE = True
-  (==) LEFT_SQUARE LEFT_SQUARE = True
-  (==) RIGHT_SQUARE RIGHT_SQUARE = True
-  (==) COMMA COMMA = True
   (==) COLON COLON = True
-  (==) SEMICOLON SEMICOLON = True
   (==) PLUS PLUS = True
   (==) MINUS MINUS = True
   (==) SLASH SLASH = True
   (==) STAR STAR = True
   (==) PERCENT PERCENT = True
+  (==) AMPERSAND AMPERSAND = True
+  (==) PIPE PIPE = True
+
+
   (==) BANG BANG = True
   (==) BANG_EQUAL BANG_EQUAL = True
   (==) EQUAL EQUAL = True
@@ -83,98 +96,21 @@ Eq TokenType where
   (==) GREATER_EQUAL GREATER_EQUAL = True
   (==) LESS LESS = True
   (==) LESS_EQUAL LESS_EQUAL = True
-  (==) DOT DOT = True
-  (==) DOT_DOT DOT_DOT = True
-  (==) (IDENTIFIER s1) (IDENTIFIER s2) = s1 == s2
-  (==) (STRING s1) (STRING s2) = s1 == s2
-  (==) (INTEGER n1) (INTEGER n2) = n1 == n2
-  (==) (NUMBER r1) (NUMBER r2) = r1 == r2
+
+  (==) (IDENTIFIER a) (IDENTIFIER b) = a == b
+  (==) (INTEGER a) (INTEGER b) = a == b
+
   (==) IF IF = True
-  (==) ELSE ELSE = True
-  (==) WHILE WHILE = True
-  (==) FOR FOR = True
-  (==) IN IN = True
-  (==) FN FN = True
-  (==) RETURN RETURN = True
-  -- (==) PRINT PRINT = True
-  (==) AND AND = True
-  (==) OR OR = True
-  (==) LET LET = True
-  (==) CONST CONST = True
-  (==) NILT NILT = True
-  (==) BOOL BOOL = True
-  -- (==) CHAR CHAR = True
-  (==) INT INT = True
-  (==) REAL REAL = True
-  (==) STRINGT STRINGT = True
-  (==) NILV NILV = True
-  (==) TRUE TRUE = True
-  (==) FALSE FALSE = True
-  (==) BREAK BREAK = True
+  (==) THEN THEN = True
+  (==) GOTO GOTO = True
+  (==) PRINT PRINT = True
+
   (==) NEWLINE NEWLINE = True
   (==) EOF EOF = True
+
   (==) _ _ = False
 
--- tokenTypeShow : Show TokenType
--- tokenTypeShow = %runElab derive
-
-Show TokenType where
-  show LEFT_PAREN = "LEFT_PAREN"
-  show RIGHT_PAREN = "RIGHT_PAREN"
-  show LEFT_BRACE = "LEFT_BRACE"
-  show RIGHT_BRACE = "RIGHT_BRACE"
-  show LEFT_SQUARE = "LEFT_SQUARE"
-  show RIGHT_SQUARE = "RIGHT_SQUARE"
-  show COMMA = "COMMA"
-  show COLON = "COLON"
-  show SEMICOLON = "SEMICOLON"
-  show PLUS = "PLUS"
-  show MINUS = "MINUS"
-  show SLASH = "SLASH"
-  show STAR = "STAR"
-  show PERCENT = "PERCENT"
-  show BANG = "BANG"
-  show BANG_EQUAL = "BANG_EQUAL"
-  show EQUAL = "EQUAL"
-  show EQUAL_EQUAL = "EQUAL_EQUAL"
-  show GREATER = "GREATER"
-  show GREATER_EQUAL = "GREATER_EQUAL"
-  show LESS = "LESS"
-  show LESS_EQUAL = "LESS_EQUAL"
-  show DOT = "DOT"
-  show DOT_DOT = "DOT_DOT"
-
-  show (IDENTIFIER s) = "IDENTIFIER " ++ show s
-  show (STRING s)     = "STRING " ++ show s
-  show (INTEGER n)    = "INTEGER " ++ show n
-  show (NUMBER r)     = "NUMBER " ++ show r
-
-  show IF = "IF"
-  show ELSE = "ELSE"
-  show WHILE = "WHILE"
-  show FOR = "FOR"
-  show IN = "IN"
-  show FN = "FN"
-  show RETURN = "RETURN"
-  -- show PRINT = "PRINT"
-  show AND = "AND"
-  show OR = "OR"
-  show LET = "LET"
-  show CONST = "CONST"
-  show NILT = "NILT"
-  show BOOL = "BOOL"
-  -- show CHAR = "CHAR"
-  show INT = "INT"
-  show REAL = "REAL"
-  show STRINGT = "STRINGT"
-  show NILV = "NILV"
-  show TRUE = "TRUE"
-  show FALSE = "FALSE"
-  show BREAK = "BREAK"
-
-  show NEWLINE = "NEWLINE"
-  show EOF = "EOF"
-
+public export
 record Token where
   constructor MkToken
   token  : TokenType
@@ -288,20 +224,6 @@ replaceLastEl func ls@(_::_) = ini ++ [func lst]
 modifyLastError : (String -> String) -> ErrorMsg -> ErrorMsg
 modifyLastError func = replaceLastEl func
 
-parseStringLiteral : Parser LexerState Token
-parseStringLiteral =
-  do
-    state@(MkLexerState _ line column) <- lift get
-    let firstQuoteParser    = parserOverwriteError (\err => [ "No start to string literal found" ] ) $ parseChar ('"'==)
-    let lastQuoteParser     = parserOverwriteError (\err => [ "No end to string literal found"   ] ) $ parseChar ('"'==)
-    let stringLiteralParser = parserOverwriteError (modifyLastError (\err' => "Inside string literal: " ++ err')) $ parseInsideStringLiteral
-    let parser = (\_, str, _ => str) <$> firstQuoteParser <*> stringLiteralParser <*> lastQuoteParser
-    case (parse parser) state of 
-      (_, Left err) => left err
-      (state', Right rh) => do
-        lift . put $ state'
-        pure $ MkToken (STRING rh) line column
-
 parseIdentifier : Parser LexerState Token
 parseIdentifier =
   do
@@ -317,22 +239,11 @@ parseIdentifier =
   where
     isIdentifierHead : Char -> Bool
     isIdentifierHead '_' = True
-    isIdentifierHead chr = isAlpha chr
+    isIdentifierHead chr = isAlpha chr || (chr == '_')
     -- isIdentifierHead '_' = trace ("TRACE HEAD: " ++ show '_') $ True
     -- isIdentifierHead chr = trace ("TRACE HEAD: " ++ show chr) $ isAlpha chr
     isIdentifierTail : Char -> Bool
-    isIdentifierTail chr = isAlpha chr || isDigit chr
-
-parseRealNumberLiteral : Parser LexerState Token
-parseRealNumberLiteral =
-  do
-    state@(MkLexerState _ line column) <- lift get
-    let parser = (\pre, _, post => MkRealNumber pre post) <$> parseInteger <*> parseChar ('.'==) <*> parseInteger
-    case (parse parser) state of
-      (_, Left err) => left err
-      (state', Right rh) => do
-        lift . put $ state'
-        pure $ MkToken (NUMBER rh) line column
+    isIdentifierTail chr = isAlpha chr || isDigit chr || (chr == '_')
 
 parseWhiteSpace : Parser LexerState ()
 parseWhiteSpace =
@@ -367,11 +278,11 @@ parseMultipleCharacterTokens = parseBasic parser
   where
     parser : Parser LexerState Token
     parser =
-          parseKeyword BANG_EQUAL    "!="
-      <|> parseKeyword EQUAL_EQUAL   "=="
-      <|> parseKeyword GREATER_EQUAL ">="
-      <|> parseKeyword LESS_EQUAL    "<="
-      <|> parseKeyword LESS_EQUAL    ".."
+          parseKeyword BANG_EQUAL             "!="
+      <|> parseKeyword EQUAL_EQUAL            "=="
+      <|> parseKeyword GREATER_EQUAL          ">="
+      <|> parseKeyword LESS_EQUAL             "<="
+      <|> parseKeyword LESS_EQUAL             ".."
 
 parseSingleCharacterTokens : Parser LexerState Token
 parseSingleCharacterTokens = parseBasic parser
@@ -380,14 +291,7 @@ parseSingleCharacterTokens = parseBasic parser
     parser =
           parseKeyword LEFT_PAREN   "("
       <|> parseKeyword RIGHT_PAREN  ")"
-      <|> parseKeyword LEFT_BRACE   "{"
-      <|> parseKeyword RIGHT_BRACE  "}"
-      <|> parseKeyword LEFT_SQUARE  "["
-      <|> parseKeyword RIGHT_SQUARE "]"
-      <|> parseKeyword COMMA        ","
-      <|> parseKeyword DOT          "."
       <|> parseKeyword COLON        ":"
-      <|> parseKeyword SEMICOLON    ";"
       <|> parseKeyword PLUS         "+"
       <|> parseKeyword MINUS        "-"
       <|> parseKeyword SLASH        "/"
@@ -397,6 +301,8 @@ parseSingleCharacterTokens = parseBasic parser
       <|> parseKeyword EQUAL        "="
       <|> parseKeyword GREATER      ">"
       <|> parseKeyword LESS         "<"
+      <|> parseKeyword AMPERSAND    "&"
+      <|> parseKeyword PIPE         "|"
 
 parseKeywordTokens : Parser LexerState Token
 parseKeywordTokens = parseBasic parser
@@ -404,27 +310,9 @@ parseKeywordTokens = parseBasic parser
     parser : Parser LexerState Token
     parser =
           parseKeyword IF      "if"
-      <|> parseKeyword ELSE    "else"
-      <|> parseKeyword WHILE   "while"
-      <|> parseKeyword FOR     "for"
-      <|> parseKeyword IN      "in"
-      <|> parseKeyword FN      "fn"
-      <|> parseKeyword RETURN  "return"
-      -- <|> parseKeyword PRINT   "print"
-      <|> parseKeyword AND     "and"
-      <|> parseKeyword OR      "or"
-      <|> parseKeyword LET     "let"
-      <|> parseKeyword CONST   "const"
-      <|> parseKeyword NILT    "Nil"
-      <|> parseKeyword BOOL    "Bool"
-      -- <|> parseKeyword CHAR "Char"
-      <|> parseKeyword INT     "Int"
-      <|> parseKeyword REAL    "Real"
-      <|> parseKeyword STRINGT "String"
-      <|> parseKeyword NILV    "nil"
-      <|> parseKeyword TRUE    "true"
-      <|> parseKeyword FALSE   "false"
-      <|> parseKeyword BREAK   "break"
+      <|> parseKeyword THEN    "then"
+      <|> parseKeyword GOTO    "goto"
+      <|> parseKeyword PRINT   "print"
 
 lexToken : Parser LexerState Token
 lexToken = -- parserOverwriteError (\err => "Unable to parse txt") $
@@ -433,9 +321,7 @@ lexToken = -- parserOverwriteError (\err => "Unable to parse txt") $
   <|> parseMultipleCharacterTokens
   <|> parseSingleCharacterTokens
   <|> parseIdentifier
-  <|> parseStringLiteral
   <|> parseIntegerLiteral
-  <|> parseRealNumberLiteral
 
 lexTokens : Parser LexerState (List Token)
 lexTokens = many lexToken

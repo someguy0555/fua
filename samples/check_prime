@@ -1,0 +1,18 @@
+n = 17
+i = 2
+is_prime = 1
+
+loop:
+    if i >= n goto end
+
+    rem = n % i
+    if rem == 0 goto not_prime
+
+    i = i + 1
+    goto loop
+
+not_prime:
+    is_prime = 0
+
+end:
+    print is_prime
